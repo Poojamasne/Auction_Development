@@ -5,7 +5,7 @@ require('dotenv').config();
 
 exports.signup = async (req, res) => {
   try {
-    const { company_name, phone_number, person_name, email, company_address, company_product_service } = req.body;
+    const { company_name, phone_number, person_name, email, company_address, company_product_service, gstn } = req.body;
 
     // Validation rules
     if (!company_name || company_name.trim().length < 2) {
@@ -28,16 +28,21 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company address must be less than 255 characters" });
     }
 
+    // GSTN validation (optional)
+    if (gstn && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}[Z]{1}[0-9A-Z]{1}$/.test(gstn)) {
+      return res.status(400).json({ success: false, message: "Invalid GSTN format" });
+    }
+
     // Check if phone already exists
     const [existingUser] = await db.query('SELECT * FROM users WHERE phone_number = ?', [phone_number]);
     if (existingUser.length > 0) {
       return res.status(400).json({ success: false, message: "User already exists with this phone number" });
     }
 
-    // Insert into DB
+    // Insert into DB (add gstn column)
     const [result] = await db.query(
-      'INSERT INTO users (company_name, phone_number, person_name, email, company_address, company_product_service) VALUES (?, ?, ?, ?, ?, ?)',
-      [company_name, phone_number, person_name, email, company_address, company_product_service]
+      'INSERT INTO users (company_name, phone_number, person_name, email, company_address, company_product_service, gstn) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [company_name, phone_number, person_name, email, company_address, company_product_service, gstn]
     );
 
     const userId = result.insertId;
@@ -57,7 +62,8 @@ exports.signup = async (req, res) => {
         person_name,
         email,
         company_address,
-        company_product_service
+        company_product_service,
+        gstn
       }
     });
   } catch (error) {
@@ -65,6 +71,7 @@ exports.signup = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
+
 
 
 exports.sendLoginOTP = async (req, res) => {
