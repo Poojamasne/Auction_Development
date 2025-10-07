@@ -8,7 +8,7 @@ const Auction = require('../models/Auction');
 const AuctionParticipant = require('../models/AuctionParticipant');
 const AuctionDocument = require('../models/AuctionDocument');
 const Bid   = require('../models/Bid');
-const { sendTwilioSMS } = require('../utils/twilio');
+const { sendSMS } = require('../utils/smsService'); // ✅ ADD THIS LINE
 const db    = require('../db');
 
 // ------------------------------------------------------------------
@@ -231,7 +231,7 @@ exports.createAuction = async (req, res) => {
 
           for (const p of participantList) {
             try {
-              await sendTwilioSMS(p, msg);
+              await sendSMS(p, msg);  // ✅ This is your 2factor service
               smsCount++;
             } catch (e) {
               console.error(`❌ Failed to send SMS to ${p}:`, e.message);
@@ -1025,7 +1025,7 @@ exports.addParticipants = async (req, res) => {
 
         for (const participant of participantList) {
           try {
-            await sendTwilioSMS(participant, message);
+            await sendSMS(participant, message);  // ✅ CORRECT
             smsCount++;
           } catch (smsError) {
             console.error(`❌ Failed to send to ${participant}:`, smsError.message);
