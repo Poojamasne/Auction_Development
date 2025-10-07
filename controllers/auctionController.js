@@ -286,22 +286,26 @@ if (participantList.length) {
 
     const auction = await Auction.findById(auctionId);
 
-    return res.status(201).json({
-      success: true,
-      message: open_to_all
-        ? 'Auction created – open to all suppliers'
-        : `Auction created with ${participantList.length} participant(s)${smsCount ? `, ${smsCount} SMS` : ''}`,
-      auction: {
-        ...auction,
-        end_time,
-        formatted_start_time: formatTimeToAMPM(auction.start_time),
-        formatted_end_time: formatTimeToAMPM(end_time)
-      },
-      invitationResults: open_to_all
-        ? { totalParticipants: 0, successfulSMS: 0, note: 'Open to all suppliers' }
-        : { totalParticipants: participantList.length, successfulSMS: smsCount },
-      documents: uploadedDocs
-    });
+  return res.status(201).json({
+  success: true,
+  message: open_to_all
+    ? `Auction created – open to all suppliers${participantList.length ? ` with ${participantList.length} invited participant(s)` : ''}${smsCount ? `, ${smsCount} SMS sent` : ''}`
+    : `Auction created with ${participantList.length} participant(s)${smsCount ? `, ${smsCount} SMS` : ''}`,
+  auction: {
+    ...auction,
+    end_time,
+    formatted_start_time: formatTimeToAMPM(auction.start_time),
+    formatted_end_time: formatTimeToAMPM(end_time)
+  },
+  invitationResults: {  // ✅ FIXED: Always show actual data
+    totalParticipants: participantList.length,
+    successfulSMS: smsCount,
+    note: open_to_all 
+      ? `Open to all suppliers + ${participantList.length} invited participants`
+      : 'Invited participants only'
+  },
+  documents: uploadedDocs
+});
   } catch (e) {
     console.error('❌ Create auction:', e);
     return res.status(500).json({ success: false, message: 'Server error', error: e.message });
