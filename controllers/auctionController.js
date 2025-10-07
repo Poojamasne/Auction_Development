@@ -227,7 +227,7 @@ exports.createAuction = async (req, res) => {
         if (send_invitations === 'true' || send_invitations === true) {
           const auction = await Auction.findById(auctionId);
           const auctionDate = new Date(auction.auction_date).toLocaleDateString('en-IN');
-          const msg = `Join "${auction.title}" auction on ${auctionDate} at ${auction.start_time}. Website: https://soft-macaron-8cac07.netlify.app/register  `;
+          const msg = `Join ${auction.title} auction on ${auctionDate} at ${formatTimeToAMPM(auction.start_time)}. Reg link provided. - Zonictec`;
 
           for (const p of participantList) {
             try {
