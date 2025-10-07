@@ -225,39 +225,22 @@ exports.createAuction = async (req, res) => {
         );
 
         if (send_invitations === 'true' || send_invitations === true) {
-  const auction = await Auction.findById(auctionId);
-  const auctionDate = new Date(auction.auction_date).toLocaleDateString('en-IN');
-  
-  // ✅ USE TEMPLATE VARIABLES (matches your approved DLT template)
-  const templateParams = {
-    VAR1: 'Valued Customer',
-    VAR2: auction.title,
-    VAR3: auctionDate,
-    VAR4: formatTimeToAMPM(auction.start_time),
-    VAR5: 'https://soft-macaron-8cac07.netlify.app/register'
-  };
+          const auction = await Auction.findById(auctionId);
+          const auctionDate = new Date(auction.auction_date).toLocaleDateString('en-IN');
+          const msg = `Join ${auction.title} auction on ${auctionDate} at ${formatTimeToAMPM(auction.start_time)}. Reg link provided. - Zonictec`;
 
-  for (const p of participantList) {
-    try {
-      // Use template SMS instead of promotional SMS
-      await sendTemplateSMS(p, templateParams);
-      smsCount++;
-      console.log(`✅ Template SMS sent to ${p}`);
-    } catch (e) {
-      console.error(`❌ Failed to send template SMS to ${p}:`, e.message);
-      
-      // Fallback to promotional SMS if template fails
-      try {
-        const fallbackMsg = `Join ${auction.title} auction on ${auctionDate}. Time: ${formatTimeToAMPM(auction.start_time)} - Zonictec`;
-        await sendSMS(p, fallbackMsg);
-        console.log(`✅ Fallback promotional SMS sent to ${p}`);
-      } catch (fallbackError) {
-        console.error(`❌ Fallback SMS also failed for ${p}:`, fallbackError.message);
+          for (const p of participantList) {
+            try {
+              await sendSMS(p, msg);  // ✅ This is your 2factor service
+              smsCount++;
+            } catch (e) {
+              console.error(`❌ Failed to send SMS to ${p}:`, e.message);
+            }
+            await new Promise(r => setTimeout(r, 500));
+          }
+        }
       }
     }
-    await new Promise(r => setTimeout(r, 500));
-  }
-}
     // notify creator AND participants
 if (participantList.length) {
   // Notify creator
