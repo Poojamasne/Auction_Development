@@ -171,12 +171,30 @@ exports.getAuctionReport = async (req, res) => {
 function formatTimeTo12Hour(timeString) {
     if (!timeString) return "";
     
-    const time = new Date(`2000-01-01T${timeString}`);
-    return time.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-    });
+    try {
+        // Handle both time string and full datetime string
+        let timePart = timeString;
+        if (timeString.includes('T')) {
+            // If it's a full datetime string like "2025-10-10T07:55:00.000Z"
+            const timeObj = new Date(timeString);
+            return timeObj.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true 
+            });
+        } else {
+            // If it's just time string like "07:40:00"
+            const [hours, minutes, seconds] = timeString.split(':');
+            const hour = parseInt(hours);
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const hour12 = hour % 12 || 12;
+            
+            return `${hour12}:${minutes} ${ampm}`;
+        }
+    } catch (error) {
+        console.warn('Error formatting time:', error);
+        return timeString;
+    }
 }
 
 function calculateTimeRemaining(endTime) {
@@ -275,7 +293,6 @@ async function getDocuments(auctionId) {
     }
 }
 
-// Get all auctions for dropdown
 // Get all auctions for a user
 exports.getAllAuctions = async (req, res) => {
     const userId = req.query.userId;
@@ -305,18 +322,16 @@ exports.getAllAuctions = async (req, res) => {
             [userId]
         );
 
-        // Format the response - use the actual open_to_all field from database
+        // Format the response with 12-hour time format
         const formattedAuctions = auctions.map(auction => ({
             id: auction.id,
             title: auction.title,
             status: auction.status,
             auction_date: auction.auction_date,
-            start_time: auction.start_time,
-            end_time: auction.end_time,
+            start_time: formatTimeTo12Hour(auction.start_time), // Convert to 12-hour format
+            end_time: formatTimeTo12Hour(auction.end_time), // Convert to 12-hour format
             auction_type: auction.auction_type,
-            open_to_all: auction.open_to_all ? 'Yes' : 'No', // Use the actual open_to_all field
-            // Include pre_bid_allowed if needed, but remove if not required
-            pre_bid_allowed: undefined
+            open_to_all: auction.open_to_all ? 'Yes' : 'No'
         }));
 
         res.json({
