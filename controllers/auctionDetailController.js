@@ -276,32 +276,55 @@ async function getDocuments(auctionId) {
 }
 
 // Get all auctions for dropdown
+// Get all auctions for a user
 exports.getAllAuctions = async (req, res) => {
-  try {
-    const userId = req.query.userId; // ?userId=123
-    if (!userId) {
-      return res.status(400).json({ success: false, message: "userId is required" });
+    const userId = req.query.userId;
+
+    if (!userId || isNaN(userId)) {
+        return res.status(400).json({ 
+            success: false,
+            message: "Invalid user ID" 
+        });
     }
 
-    const query = `
-      SELECT a.id, a.title, a.status, a.auction_date, a.start_time, 'created' as auction_type
-      FROM auctions a WHERE a.created_by = ?
-      UNION
-      SELECT a.id, a.title, a.status, a.auction_date, a.start_time, 'participated' as auction_type
-      FROM auctions a INNER JOIN bids b ON a.id = b.auction_id WHERE b.user_id = ?
-      UNION
-      SELECT a.id, a.title, a.status, a.auction_date, a.start_time, 'invited' as auction_type
-      FROM auctions a INNER JOIN auction_participants ap ON a.id = ap.auction_id WHERE ap.user_id = ?
-      ORDER BY auction_date DESC, start_time DESC
-    `;
+    try {
+        const [auctions] = await db.query(
+            `SELECT 
+                id,
+                title,
+                status,
+                auction_date,
+                start_time,
+                DATE_ADD(TIMESTAMP(auction_date, start_time), INTERVAL duration MINUTE) AS end_time,
+                pre_bid_allowed,
+                'created' as auction_type
+            FROM auctions 
+            WHERE created_by = ?
+            ORDER BY auction_date DESC, start_time DESC`,
+            [userId]
+        );
 
-    const [auctions] = await db.query(query, [userId, userId, userId]);
+        // Format the response
+        const formattedAuctions = auctions.map(auction => ({
+            ...auction,
+            open_to_all: auction.pre_bid_allowed ? 'Yes' : 'No'
+        }));
 
-    res.json({ success: true, auctions, count: auctions.length });
-  } catch (err) {
-    console.error("Error fetching auctions:", err);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
+        // Remove pre_bid_allowed field from response if you don't want both
+        const finalAuctions = formattedAuctions.map(({ pre_bid_allowed, ...auction }) => auction);
+
+        res.json({
+            success: true,
+            auctions: finalAuctions,
+            count: finalAuctions.length
+        });
+
+    } catch (err) {
+        console.error("Error fetching user auctions:", err);
+        res.status(500).json({ 
+            success: false,
+            message: "Internal server error",
+            error: err.message
+        });
+    }
 };
-
-/////
