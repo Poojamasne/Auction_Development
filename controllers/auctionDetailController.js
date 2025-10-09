@@ -297,6 +297,7 @@ exports.getAllAuctions = async (req, res) => {
                 start_time,
                 DATE_ADD(TIMESTAMP(auction_date, start_time), INTERVAL duration MINUTE) AS end_time,
                 pre_bid_allowed,
+                open_to_all,
                 'created' as auction_type
             FROM auctions 
             WHERE created_by = ?
@@ -304,19 +305,24 @@ exports.getAllAuctions = async (req, res) => {
             [userId]
         );
 
-        // Format the response
+        // Format the response - use the actual open_to_all field from database
         const formattedAuctions = auctions.map(auction => ({
-            ...auction,
-            open_to_all: auction.pre_bid_allowed ? 'Yes' : 'No'
+            id: auction.id,
+            title: auction.title,
+            status: auction.status,
+            auction_date: auction.auction_date,
+            start_time: auction.start_time,
+            end_time: auction.end_time,
+            auction_type: auction.auction_type,
+            open_to_all: auction.open_to_all ? 'Yes' : 'No', // Use the actual open_to_all field
+            // Include pre_bid_allowed if needed, but remove if not required
+            pre_bid_allowed: undefined
         }));
-
-        // Remove pre_bid_allowed field from response if you don't want both
-        const finalAuctions = formattedAuctions.map(({ pre_bid_allowed, ...auction }) => auction);
 
         res.json({
             success: true,
-            auctions: finalAuctions,
-            count: finalAuctions.length
+            auctions: formattedAuctions,
+            count: formattedAuctions.length
         });
 
     } catch (err) {
