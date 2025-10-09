@@ -172,27 +172,24 @@ function formatTimeTo12Hour(timeString) {
     if (!timeString) return "";
     
     try {
-        // Handle both time string and full datetime string
-        let timePart = timeString;
-        if (timeString.includes('T')) {
-            // If it's a full datetime string like "2025-10-10T07:55:00.000Z"
-            const timeObj = new Date(timeString);
-            return timeObj.toLocaleTimeString('en-US', { 
-                hour: 'numeric', 
-                minute: '2-digit',
-                hour12: true 
-            });
-        } else {
-            // If it's just time string like "07:40:00"
-            const [hours, minutes, seconds] = timeString.split(':');
-            const hour = parseInt(hours);
-            const ampm = hour >= 12 ? 'PM' : 'AM';
-            const hour12 = hour % 12 || 12;
-            
-            return `${hour12}:${minutes} ${ampm}`;
+        let timeToFormat = timeString;
+        
+        // If it's a full datetime string like "2025-10-10T07:55:00.000Z"
+        if (timeString.includes('T') && timeString.includes(':')) {
+            // Extract just the time part (HH:MM:SS)
+            const timePart = timeString.split('T')[1]?.split('.')[0] || timeString.split('T')[1] || timeString;
+            timeToFormat = timePart;
         }
+        
+        // Now process the time string
+        const [hours, minutes, seconds] = timeToFormat.split(':');
+        const hour = parseInt(hours);
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const hour12 = hour % 12 || 12;
+        
+        return `${hour12}:${minutes} ${ampm}`;
     } catch (error) {
-        console.warn('Error formatting time:', error);
+        console.warn('Error formatting time:', error, 'Input:', timeString);
         return timeString;
     }
 }
@@ -294,6 +291,7 @@ async function getDocuments(auctionId) {
 }
 
 // Get all auctions for a user
+// Get all auctions for a user
 exports.getAllAuctions = async (req, res) => {
     const userId = req.query.userId;
 
@@ -328,8 +326,8 @@ exports.getAllAuctions = async (req, res) => {
             title: auction.title,
             status: auction.status,
             auction_date: auction.auction_date,
-            start_time: formatTimeTo12Hour(auction.start_time), // Convert to 12-hour format
-            end_time: formatTimeTo12Hour(auction.end_time), // Convert to 12-hour format
+            start_time: formatTimeTo12Hour(auction.start_time),
+            end_time: formatTimeTo12Hour(auction.end_time), // This should now work properly
             auction_type: auction.auction_type,
             open_to_all: auction.open_to_all ? 'Yes' : 'No'
         }));
