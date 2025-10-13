@@ -8,7 +8,8 @@ const Auction = require('../models/Auction');
 const AuctionParticipant = require('../models/AuctionParticipant');
 const AuctionDocument = require('../models/AuctionDocument');
 const Bid   = require('../models/Bid');
-const { sendSMS } = require('../utils/smsService'); // ✅ ADD THIS LINE
+// Correct import path for utils/smsService.js
+const smsService = require('../utils/smsService');
 const db    = require('../db');
 
 // ------------------------------------------------------------------
