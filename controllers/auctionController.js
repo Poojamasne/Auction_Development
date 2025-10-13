@@ -196,6 +196,7 @@ exports.createAuction = async (req, res) => {
     await updateAuctionStatuses();
 
     let participantList = [], smsCount = 0;
+    let smsErrors = [];
 
     if (participants) {
       let parsed = participants;
@@ -214,6 +215,8 @@ exports.createAuction = async (req, res) => {
           .filter(Boolean)
       )];
 
+      console.log(`👥 Participants to process: ${participantList.join(', ')}`);
+
       if (participantList.length) {
         await AuctionParticipant.addMultiple(
           auctionId,
@@ -226,9 +229,7 @@ exports.createAuction = async (req, res) => {
         );
 
         if (send_invitations === 'true' || send_invitations === true) {
-          const auction = await Auction.findById(auctionId);
-          
-          // Format date and time for SMS template
+          // Format date and time for SMS
           const formattedDate = new Date(auction_date).toLocaleDateString('en-IN', {
             day: 'numeric',
             month: 'short',
@@ -237,10 +238,17 @@ exports.createAuction = async (req, res) => {
           const formattedTime = formatTimeToAMPM(start_time);
           const eventDateTime = `${formattedDate} at ${formattedTime}`;
 
+          console.log(`📅 Event details: ${title} on ${eventDateTime}`);
+
+          // Import SMS service
+          const smsService = require('./smsService');
+
           // Send template SMS to each participant
           for (const phoneNumber of participantList) {
             try {
-              // Get user name if available, otherwise use generic name
+              console.log(`\n🚀 Attempting Template SMS for: ${phoneNumber}`);
+              
+              // Get user name if available
               let userName = 'Participant';
               const cleanPhone = phoneNumber.replace(/\D/g, '');
               const [userData] = await db.query(
@@ -250,10 +258,10 @@ exports.createAuction = async (req, res) => {
               
               if (userData.length > 0 && userData[0].name) {
                 userName = userData[0].name;
+                console.log(`👤 Found user name: ${userName}`);
               }
 
-              // Send template SMS using the exact API format
-              const smsService = require('./smsService'); // Adjust path as needed
+              // Send template SMS (EXACTLY like your curl)
               await smsService.sendTemplateSMS(phoneNumber, {
                 VAR1: userName,
                 VAR2: title,
@@ -261,30 +269,30 @@ exports.createAuction = async (req, res) => {
               });
               
               smsCount++;
-              console.log(`✅ Template SMS sent to ${phoneNumber}`);
-            } catch (e) {
-              console.error(`❌ Failed to send Template SMS to ${phoneNumber}:`, e.message);
+              console.log(`✅ Template SMS sent successfully to ${phoneNumber}`);
               
-              // Fallback to promotional SMS if template fails
-              try {
-                const fallbackMessage = `Dear Participant, You are invited to join "${title}" auction on ${eventDateTime}. - Zonictec`;
-                const smsService = require('./smsService'); // Adjust path as needed
-                await smsService.sendSMS(phoneNumber, fallbackMessage);
-                smsCount++;
-                console.log(`✅ Fallback Promotional SMS sent to ${phoneNumber}`);
-              } catch (fallbackError) {
-                console.error(`❌ Fallback SMS also failed for ${phoneNumber}:`, fallbackError.message);
-              }
+            } catch (smsError) {
+              console.error(`❌ Template SMS failed for ${phoneNumber}:`, smsError.message);
+              smsErrors.push({
+                phone: phoneNumber,
+                error: smsError.message
+              });
             }
             
             // Delay to avoid rate limiting
+            console.log(`⏳ Waiting 500ms before next SMS...`);
             await new Promise(r => setTimeout(r, 500));
           }
         }
       }
     }
 
-    // notify creator AND participants
+    // Log SMS results
+    console.log(`\n📊 SMS SENDING SUMMARY:`);
+    console.log(`✅ Successful: ${smsCount}`);
+    console.log(`❌ Failed: ${smsErrors.length}`);
+
+    // Rest of your existing code for notifications and documents...
     if (participantList.length) {
       // Notify creator
       await notify(created_by, 'participant_added', auctionId,
@@ -344,6 +352,8 @@ exports.createAuction = async (req, res) => {
       invitationResults: {
         totalParticipants: participantList.length,
         successfulSMS: smsCount,
+        failedSMS: smsErrors.length,
+        errors: smsErrors,
         note: open_to_all 
           ? `Open to all suppliers + ${participantList.length} invited participants`
           : 'Invited participants only',
@@ -352,7 +362,7 @@ exports.createAuction = async (req, res) => {
       documents: uploadedDocs
     });
   } catch (e) {
-    console.error('❌ Create auction:', e);
+    console.error('❌ Create auction error:', e);
     return res.status(500).json({ success: false, message: 'Server error', error: e.message });
   }
 };
