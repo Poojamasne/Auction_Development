@@ -162,7 +162,7 @@ exports.createAuction = async (req, res) => {
 
     const created_by = req.user.userId;
     
-    // ADDED: Check if user is blocked
+    // Check if user is blocked
     const [userCheck] = await db.query(
       'SELECT status, is_active FROM users WHERE id = ?',
       [created_by]
@@ -250,19 +250,11 @@ exports.createAuction = async (req, res) => {
               
               if (userData.length > 0 && userData[0].name) {
                 userName = userData[0].name;
-              } else {
-                // Try to get from auction participants table
-                const [participantData] = await db.query(
-                  'SELECT name FROM auction_participants WHERE phone_number = ? AND auction_id = ?',
-                  [cleanPhone, auctionId]
-                );
-                if (participantData.length > 0 && participantData[0].name) {
-                  userName = participantData[0].name;
-                }
               }
 
-              // Send template SMS using the exact API format from your curl
-              await exports.sendTemplateSMS(phoneNumber, {
+              // Send template SMS using the exact API format
+              const smsService = require('./smsService'); // Adjust path as needed
+              await smsService.sendTemplateSMS(phoneNumber, {
                 VAR1: userName,
                 VAR2: title,
                 VAR3: eventDateTime
@@ -273,12 +265,13 @@ exports.createAuction = async (req, res) => {
             } catch (e) {
               console.error(`❌ Failed to send Template SMS to ${phoneNumber}:`, e.message);
               
-              // Fallback to regular SMS if template fails
+              // Fallback to promotional SMS if template fails
               try {
                 const fallbackMessage = `Dear Participant, You are invited to join "${title}" auction on ${eventDateTime}. - Zonictec`;
-                await exports.sendSMS(phoneNumber, fallbackMessage);
+                const smsService = require('./smsService'); // Adjust path as needed
+                await smsService.sendSMS(phoneNumber, fallbackMessage);
                 smsCount++;
-                console.log(`✅ Fallback SMS sent to ${phoneNumber}`);
+                console.log(`✅ Fallback Promotional SMS sent to ${phoneNumber}`);
               } catch (fallbackError) {
                 console.error(`❌ Fallback SMS also failed for ${phoneNumber}:`, fallbackError.message);
               }
@@ -363,6 +356,7 @@ exports.createAuction = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Server error', error: e.message });
   }
 };
+
 
 // PATCH API - Update decremental_value in DB
 exports.updateDecrementalValue = async (req, res) => {
