@@ -75,7 +75,7 @@ exports.sendSMS = async (phone_number, message) => {
 };
 
 /**
- * Send SMS using DLT Approved Template with variables
+ * Send Template SMS using Transactional API (EXACTLY as per your curl request)
  */
 exports.sendTemplateSMS = async (phone_number, templateParams) => {
   try {
@@ -97,24 +97,32 @@ exports.sendTemplateSMS = async (phone_number, templateParams) => {
     console.log(`📱 Sending Template SMS to: ${formattedPhone}`);
     console.log(`📋 Template Params:`, templateParams);
     
-    // ✅ CORRECT TRANSACTIONAL TEMPLATE ENDPOINT (GET request)
-    const apiUrl = `https://2factor.in/API/V1/${TRANSACTIONAL_API_KEY}/SMS/${formattedPhone}/AUTOGEN2`;
+    // ✅ EXACT API ENDPOINT AS PER YOUR CURL REQUEST
+    const apiUrl = `https://2factor.in/API/V1/${TRANSACTIONAL_API_KEY}/ADDON_SERVICES/SEND/TSMS`;
     
-    const params = {
-      TemplateName: 'ZONIXT', // Your template name
-      VAR1: templateParams.VAR1 || 'Participant',
-      VAR2: templateParams.VAR2 || '',
-      VAR3: templateParams.VAR3 || '',
-      VAR4: templateParams.VAR4 || '',
-      VAR5: templateParams.VAR5 || ''
-    };
+    const formData = new URLSearchParams();
+    formData.append('From', 'ZONIXT');
+    formData.append('To', formattedPhone);
+    formData.append('TemplateName', 'EasyAuction');
+    formData.append('VAR1', templateParams.VAR1 || 'Participant');
+    formData.append('VAR2', templateParams.VAR2 || '');
+    formData.append('VAR3', templateParams.VAR3 || '');
 
-    console.log('🌐 Calling Transactional Template API...');
+    console.log('🌐 Calling Transactional Template API (TSMS)...');
     console.log('🔗 URL:', apiUrl);
-    console.log('📦 Params:', params);
+    console.log('📦 Form Data:', {
+      From: 'ZONIXT',
+      To: formattedPhone,
+      TemplateName: 'EasyAuction',
+      VAR1: templateParams.VAR1,
+      VAR2: templateParams.VAR2,
+      VAR3: templateParams.VAR3
+    });
     
-    const response = await axios.get(apiUrl, {
-      params: params,
+    const response = await axios.post(apiUrl, formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
       timeout: 10000
     });
     
