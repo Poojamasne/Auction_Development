@@ -143,6 +143,9 @@ exports.autoUpdateAuctionStatus = async (req, res) => {
 /* ----------------------------------------------------------
    CREATE AUCTION – stores end_time in DB
 ---------------------------------------------------------- */
+/* ----------------------------------------------------------
+   CREATE AUCTION – stores end_time in DB
+---------------------------------------------------------- */
 exports.createAuction = async (req, res) => {
   try {
     const {
@@ -243,16 +246,21 @@ exports.createAuction = async (req, res) => {
             try {
               console.log(`\n🚀 Attempting Template SMS for: ${phoneNumber}`);
               
-              // Get user name if available
+              // ✅ CORRECTED: Get user name using correct column names
               let userName = 'Participant';
               const cleanPhone = phoneNumber.replace(/\D/g, '');
               const [userData] = await db.query(
-                'SELECT name FROM users WHERE phone_number = ?',
+                'SELECT person_name, company_name FROM users WHERE phone_number = ?',
                 [cleanPhone]
               );
               
-              if (userData.length > 0 && userData[0].name) {
-                userName = userData[0].name;
+              if (userData.length > 0) {
+                // Use person_name if available, otherwise company_name
+                if (userData[0].person_name) {
+                  userName = userData[0].person_name;
+                } else if (userData[0].company_name) {
+                  userName = userData[0].company_name;
+                }
                 console.log(`👤 Found user name: ${userName}`);
               }
 
@@ -361,6 +369,7 @@ exports.createAuction = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Server error', error: e.message });
   }
 };
+
 
 
 // PATCH API - Update decremental_value in DB
