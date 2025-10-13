@@ -92,25 +92,26 @@ exports.getAuctionReport = async (req, res) => {
 
         // 1. Fetch auction details
         const [auctionResults] = await db.execute(
-            `SELECT 
-                id, 
-                title, 
-                description, 
-                auction_date, 
-                start_time, 
+            `SELECT
+                id,
+                title,
+                description,
+                auction_date,
+                start_time,
                 end_time,
                 duration,
                 currency,
                 current_price,
                 decremental_value,
                 pre_bid_allowed,
+                open_to_all,
                 status,
                 created_by,
                 winner_id,
                 created_at,
                 updated_at,
                 winner_notified
-            FROM auctions 
+            FROM auctions
             WHERE id = ?`,
             [auctionId]
         );
@@ -121,15 +122,15 @@ exports.getAuctionReport = async (req, res) => {
 
         const auction = auctionResults[0];
 
-        // 2. Fetch bids summary with bid ranks
+        // 2. Fetch bids summary with bid ranks - FIXED: Changed DESC to ASC for lowest price as rank 1
         const [bids] = await db.execute(
-            `SELECT 
+            `SELECT
                 u.company_name,
                 u.id as user_id,
                 MIN(b.amount) AS pre_bid_offer,
                 MAX(b.amount) AS final_bid_offer,
                 COUNT(b.id) AS total_bids,
-                RANK() OVER (ORDER BY MAX(b.amount) DESC) AS bid_rank
+                RANK() OVER (ORDER BY MAX(b.amount) ASC) AS bid_rank
             FROM bids b
             JOIN users u ON b.user_id = u.id
             WHERE b.auction_id = ?
@@ -143,11 +144,11 @@ exports.getAuctionReport = async (req, res) => {
             ...auction,
             start_time: formatTimeTo12Hour(auction.start_time),
             end_time: formatTimeTo12Hour(auction.end_time),
-            open_to_all: auction.pre_bid_allowed ? 'Yes' : 'No',
+            open_to_all: auction.open_to_all ? 'Yes' : 'No',
             bids: bids,
             summary: {
                 total_bidders: bids.length,
-                highest_bid: bids.length > 0 ? bids[0].final_bid_offer : auction.current_price || 0
+                highest_bid: bids.length > 0 ? Math.max(...bids.map(bid => bid.final_bid_offer)) : auction.current_price || 0
             }
         };
 
@@ -158,7 +159,7 @@ exports.getAuctionReport = async (req, res) => {
 
     } catch (err) {
         console.error("Error fetching auction report:", err);
-        res.status(500).json({ 
+        res.status(500).json({
             message: "Internal server error",
             error: err.message
         });
