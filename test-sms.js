@@ -1,43 +1,36 @@
-require('dotenv').config();
-const { sendSMS, checkBalance } = require('./utils/smsService');
+// test-template-sms.js
+const smsService = require('./smsService');
 
-async function testPromotionalSMS() {
-  console.log('🧪 Testing Promotional SMS...\n');
-  console.log('🔑 API Key:', process.env.TWO_FACTOR_API_KEY);
-
-  // Check balance
-  try {
-    const balance = await checkBalance();
-    if (balance.success) {
-      console.log(`💰 SMS Balance: ${balance.balance}`);
-    } else {
-      console.log('⚠️ Could not check balance:', balance.error);
-    }
-  } catch (error) {
-    console.log('❌ Balance check failed:', error.message);
+async function testTemplateSMS() {
+  console.log('🧪 Testing Template SMS Service...\n');
+  
+  // Test 1: Check balance first
+  console.log('1. Checking balance...');
+  const balance = await smsService.checkBalance();
+  console.log('Balance result:', balance);
+  
+  if (!balance.success) {
+    console.error('❌ Cannot check balance. API key may be invalid.');
+    return;
   }
-
-  // Test promotional SMS
+  
+  console.log(`💰 Your Template SMS balance: ${balance.balance}\n`);
+  
+  // Test 2: Send template SMS (EXACTLY like your curl)
+  console.log('2. Sending template SMS...');
   try {
-    const message = 'Join "Steel Pipes Auction" on 31/12/2023 at 2:00 PM. Register now! - Zonictex IT Services';
-    
-    console.log('\n📨 Testing SMS sending...');
-    const result = await sendSMS('+919860345330', message);
-    
-    console.log('🎉 Promotional SMS Test Successful!');
-    console.log('📧 Status:', result.details.Details);
-    return result;
-    
-  } catch (error) {
-    console.log('❌ Promotional SMS Test Failed:', error.message);
-    
-    if (error.message.includes('Invalid API Key')) {
-      console.log('\n🔑 Please use your PROMOTIONAL_API_KEY in .env file');
-      console.log('💡 Current key:', process.env.TWO_FACTOR_API_KEY);
+    const result = await smsService.sendTemplateSMS('9503363209', {
+      VAR1: 'Chetan Sir',
+      VAR2: 'Zonixtec Grand Sale', 
+      VAR3: '13 Oct 2025 at 3 PM'
+    });
+    console.log('✅ Template SMS result:', result.success ? 'SUCCESS' : 'FAILED');
+    if (result.success) {
+      console.log('📱 Message ID:', result.details.Details);
     }
-    
-    throw error;
+  } catch (error) {
+    console.error('❌ Template SMS failed:', error.message);
   }
 }
 
-testPromotionalSMS();
+testTemplateSMS();
