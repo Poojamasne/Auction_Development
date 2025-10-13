@@ -143,9 +143,6 @@ exports.autoUpdateAuctionStatus = async (req, res) => {
 /* ----------------------------------------------------------
    CREATE AUCTION – stores end_time in DB
 ---------------------------------------------------------- */
-/* ----------------------------------------------------------
-   CREATE AUCTION – stores end_time in DB
----------------------------------------------------------- */
 exports.createAuction = async (req, res) => {
   try {
     const {
@@ -240,9 +237,6 @@ exports.createAuction = async (req, res) => {
           const eventDateTime = `${formattedDate} at ${formattedTime}`;
 
           console.log(`📅 Event details: ${title} on ${eventDateTime}`);
-
-          // Import SMS service
-          const smsService = require('./smsService');
 
           // Send template SMS to each participant
           for (const phoneNumber of participantList) {
