@@ -1,84 +1,20 @@
 const axios = require('axios');
 
-// Use the same API key for all SMS services
-const SMS_API_KEY = '64896017-8585-11f0-a562-0200cd936042';
+// Use promotional API key directly
+const PROMOTIONAL_API_KEY = '64896017-8585-11f0-a562-0200cd936042';
 
 /**
- * Send Promotional SMS using 2factor.in PROMOTIONAL endpoint
- */
-exports.sendSMS = async (phone_number, message) => {
-  try {
-    console.log(`🔑 Using SMS API Key: ${SMS_API_KEY.substring(0, 8)}...`);
-
-    // Clean and validate phone number
-    const cleanedPhone = phone_number.replace(/\D/g, '');
-    
-    let formattedPhone = cleanedPhone;
-    if (formattedPhone.startsWith('0')) {
-      formattedPhone = formattedPhone.substring(1);
-    }
-    if (!formattedPhone.startsWith('91') && formattedPhone.length === 10) {
-      formattedPhone = '91' + formattedPhone;
-    }
-    
-    console.log(`📱 Sending Promotional SMS to: ${formattedPhone}`);
-    console.log(`📝 Message: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`);
-    
-    // ✅ PROMOTIONAL ENDPOINT
-    const apiUrl = `https://2factor.in/API/V1/${SMS_API_KEY}/ADDON_SERVICES/SEND/PSMS`;
-    
-    const params = new URLSearchParams();
-    params.append('From', 'ZONIXT');
-    params.append('To', formattedPhone);
-    params.append('Msg', message);
-
-    console.log('🌐 Calling Promotional SMS API...');
-    
-    const response = await axios.post(apiUrl, params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      timeout: 10000
-    });
-    
-    const data = response.data;
-    
-    if (data.Status !== 'Success') {
-      throw new Error(`API Error: ${data.Details || JSON.stringify(data)}`);
-    }
-    
-    console.log('✅ Promotional SMS sent successfully!');
-    console.log('📊 Response:', data.Details);
-    
-    return {
-      success: true,
-      status: 'sent',
-      details: data
-    };
-    
-  } catch (error) {
-    console.error('❌ Error sending promotional SMS:', error.message);
-    
-    if (error.response) {
-      console.error('📊 API Response:', error.response.status, error.response.data);
-      throw new Error(`SMS failed: ${error.response.data.Details || error.response.statusText}`);
-    }
-    
-    throw new Error(`SMS failed: ${error.message}`);
-  }
-};
-
-/**
- * Send Template SMS using Transactional API (USING SAME API KEY)
+ * Send Template SMS using 2factor.in TSMS endpoint (EXACTLY like your curl)
  */
 exports.sendTemplateSMS = async (phone_number, templateParams) => {
   try {
-    console.log(`🔑 Using SMS API Key: ${SMS_API_KEY.substring(0, 8)}...`);
-
+    console.log(`🔑 Using API Key: ${PROMOTIONAL_API_KEY}`);
+    
     // Clean and format phone number
     const cleanedPhone = phone_number.replace(/\D/g, '');
-    let formattedPhone = cleanedPhone;
+    console.log(`📱 Original phone: ${phone_number}, Cleaned: ${cleanedPhone}`);
     
+    let formattedPhone = cleanedPhone;
     if (formattedPhone.startsWith('0')) {
       formattedPhone = formattedPhone.substring(1);
     }
@@ -86,58 +22,67 @@ exports.sendTemplateSMS = async (phone_number, templateParams) => {
       formattedPhone = '91' + formattedPhone;
     }
     
-    console.log(`📱 Sending Template SMS to: ${formattedPhone}`);
-    console.log(`📋 Template Params:`, templateParams);
+    console.log(`📱 Final formatted phone: ${formattedPhone}`);
+    console.log(`📋 Template Parameters:`, templateParams);
     
-    // ✅ TRANSACTIONAL TEMPLATE ENDPOINT WITH SAME API KEY
-    const apiUrl = `https://2factor.in/API/V1/${SMS_API_KEY}/ADDON_SERVICES/SEND/TSMS`;
+    // ✅ EXACT TSMS ENDPOINT FROM YOUR CURL
+    const apiUrl = `https://2factor.in/API/V1/${PROMOTIONAL_API_KEY}/ADDON_SERVICES/SEND/TSMS`;
     
-    const formData = new URLSearchParams();
+    // Create FormData exactly like your curl command
+    const FormData = require('form-data');
+    const formData = new FormData();
+    
     formData.append('From', 'ZONIXT');
     formData.append('To', formattedPhone);
     formData.append('TemplateName', 'EasyAuction');
-    formData.append('VAR1', templateParams.VAR1 || 'Participant');
+    formData.append('VAR1', templateParams.VAR1 || '');
     formData.append('VAR2', templateParams.VAR2 || '');
     formData.append('VAR3', templateParams.VAR3 || '');
 
-    console.log('🌐 Calling Transactional Template API (TSMS)...');
-    console.log('📦 Form Data:', {
-      From: 'ZONIXT',
-      To: formattedPhone,
-      TemplateName: 'EasyAuction',
-      VAR1: templateParams.VAR1,
-      VAR2: templateParams.VAR2,
-      VAR3: templateParams.VAR3
-    });
+    console.log('🌐 Calling Template SMS API (TSMS)...');
+    console.log('🔗 URL:', apiUrl);
+    console.log('📦 Form Data:');
+    console.log('  - From: ZONIXT');
+    console.log('  - To:', formattedPhone);
+    console.log('  - TemplateName: EasyAuction');
+    console.log('  - VAR1:', templateParams.VAR1);
+    console.log('  - VAR2:', templateParams.VAR2);
+    console.log('  - VAR3:', templateParams.VAR3);
     
     const response = await axios.post(apiUrl, formData, {
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
+        ...formData.getHeaders(),
       },
-      timeout: 10000
+      timeout: 15000
     });
     
     const data = response.data;
+    console.log('📊 Full API Response:', JSON.stringify(data, null, 2));
     
-    if (data.Status !== 'Success') {
-      throw new Error(`API Error: ${data.Details || JSON.stringify(data)}`);
+    if (data.Status === 'Success') {
+      console.log('✅ Template SMS sent successfully!');
+      return {
+        success: true,
+        status: 'sent',
+        details: data
+      };
+    } else {
+      console.error('❌ API returned error status:', data.Status);
+      throw new Error(data.Details || `API Error: ${data.Status}`);
     }
     
-    console.log('✅ Template SMS sent successfully!');
-    console.log('📊 Response:', data.Details);
-    
-    return {
-      success: true,
-      status: 'sent',
-      details: data
-    };
-    
   } catch (error) {
-    console.error('❌ Error sending template SMS:', error.message);
+    console.error('❌ Error sending template SMS:');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
     
     if (error.response) {
-      console.error('📊 API Response:', error.response.status, error.response.data);
-      throw new Error(`Template SMS failed: ${error.response.data?.Details || error.response.statusText}`);
+      console.error('📊 API Response Status:', error.response.status);
+      console.error('📊 API Response Data:', error.response.data);
+      throw new Error(`Template SMS failed: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+    } else if (error.request) {
+      console.error('📊 No response received');
+      throw new Error('Template SMS failed: No response from server');
     }
     
     throw new Error(`Template SMS failed: ${error.message}`);
@@ -145,39 +90,37 @@ exports.sendTemplateSMS = async (phone_number, templateParams) => {
 };
 
 /**
- * Check Promotional SMS balance
+ * Send Auction Invitation using Template SMS
  */
-exports.checkBalance = async () => {
+exports.sendAuctionInvitation = async (phone_number, auctionDetails) => {
   try {
-    const apiUrl = `https://2factor.in/API/V1/${SMS_API_KEY}/BALANCE/PSMS`;
+    const { title, eventDateTime, userName = 'Participant' } = auctionDetails;
     
-    const response = await axios.get(apiUrl, { timeout: 5000 });
-    const data = response.data;
+    console.log(`🎯 Sending auction invitation to ${phone_number}`);
+    console.log(`📝 Details: ${userName}, ${title}, ${eventDateTime}`);
     
-    return {
-      success: data.Status === 'Success',
-      balance: data.Details,
-      details: data
-    };
-    
+    return await exports.sendTemplateSMS(phone_number, {
+      VAR1: userName,
+      VAR2: title, 
+      VAR3: eventDateTime
+    });
   } catch (error) {
-    console.error('Promotional Balance check error:', error.message);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('❌ Error sending auction invitation:', error.message);
+    throw error;
   }
 };
 
 /**
- * Check Transactional SMS balance
+ * Check SMS balance
  */
-exports.checkTransactionalBalance = async () => {
+exports.checkBalance = async () => {
   try {
-    const apiUrl = `https://2factor.in/API/V1/${SMS_API_KEY}/BALANCE/TSMS`;
+    const apiUrl = `https://2factor.in/API/V1/${PROMOTIONAL_API_KEY}/BALANCE/TSMS`;
     
-    const response = await axios.get(apiUrl, { timeout: 5000 });
+    const response = await axios.get(apiUrl, { timeout: 10000 });
     const data = response.data;
+    
+    console.log('💰 Balance check response:', data);
     
     return {
       success: data.Status === 'Success',
@@ -186,7 +129,7 @@ exports.checkTransactionalBalance = async () => {
     };
     
   } catch (error) {
-    console.error('Transactional Balance check error:', error.message);
+    console.error('❌ Balance check error:', error.message);
     return {
       success: false,
       error: error.message
