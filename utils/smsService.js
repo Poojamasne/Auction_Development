@@ -1,4 +1,5 @@
 const axios = require('axios');
+const FormData = require('form-data');
 
 // Use promotional API key directly
 const PROMOTIONAL_API_KEY = '64896017-8585-11f0-a562-0200cd936042';
@@ -29,7 +30,6 @@ exports.sendTemplateSMS = async (phone_number, templateParams) => {
     const apiUrl = `https://2factor.in/API/V1/${PROMOTIONAL_API_KEY}/ADDON_SERVICES/SEND/TSMS`;
     
     // Create FormData exactly like your curl command
-    const FormData = require('form-data');
     const formData = new FormData();
     
     formData.append('From', 'ZONIXT');
@@ -41,13 +41,6 @@ exports.sendTemplateSMS = async (phone_number, templateParams) => {
 
     console.log('🌐 Calling Template SMS API (TSMS)...');
     console.log('🔗 URL:', apiUrl);
-    console.log('📦 Form Data:');
-    console.log('  - From: ZONIXT');
-    console.log('  - To:', formattedPhone);
-    console.log('  - TemplateName: EasyAuction');
-    console.log('  - VAR1:', templateParams.VAR1);
-    console.log('  - VAR2:', templateParams.VAR2);
-    console.log('  - VAR3:', templateParams.VAR3);
     
     const response = await axios.post(apiUrl, formData, {
       headers: {
@@ -73,16 +66,12 @@ exports.sendTemplateSMS = async (phone_number, templateParams) => {
     
   } catch (error) {
     console.error('❌ Error sending template SMS:');
-    console.error('Error name:', error.name);
     console.error('Error message:', error.message);
     
     if (error.response) {
       console.error('📊 API Response Status:', error.response.status);
       console.error('📊 API Response Data:', error.response.data);
       throw new Error(`Template SMS failed: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
-    } else if (error.request) {
-      console.error('📊 No response received');
-      throw new Error('Template SMS failed: No response from server');
     }
     
     throw new Error(`Template SMS failed: ${error.message}`);
