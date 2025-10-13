@@ -142,6 +142,9 @@ exports.autoUpdateAuctionStatus = async (req, res) => {
 /* ----------------------------------------------------------
    CREATE AUCTION – stores end_time in DB
 ---------------------------------------------------------- */
+/* ----------------------------------------------------------
+   CREATE AUCTION – stores end_time in DB
+---------------------------------------------------------- */
 exports.createAuction = async (req, res) => {
   try {
     const {
@@ -205,8 +208,6 @@ exports.createAuction = async (req, res) => {
         }
       }
 
-      
-
       participantList = [...new Set(
         (Array.isArray(parsed) ? parsed : [parsed])
           .map(p => String(p).replace(/[\[\]"]/g, "").trim())
@@ -226,44 +227,94 @@ exports.createAuction = async (req, res) => {
 
         if (send_invitations === 'true' || send_invitations === true) {
           const auction = await Auction.findById(auctionId);
-          const auctionDate = new Date(auction.auction_date).toLocaleDateString('en-IN');
-          const msg = `Join ${auction.title} auction on ${auctionDate} at ${formatTimeToAMPM(auction.start_time)}. Reg link provided. - Zonictec`;
+          
+          // Format date and time for SMS template
+          const formattedDate = new Date(auction_date).toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+          });
+          const formattedTime = formatTimeToAMPM(start_time);
+          const eventDateTime = `${formattedDate} at ${formattedTime}`;
 
-          for (const p of participantList) {
+          // Send template SMS to each participant
+          for (const phoneNumber of participantList) {
             try {
-              await sendSMS(p, msg);  // ✅ This is your 2factor service
+              // Get user name if available, otherwise use generic name
+              let userName = 'Participant';
+              const cleanPhone = phoneNumber.replace(/\D/g, '');
+              const [userData] = await db.query(
+                'SELECT name FROM users WHERE phone_number = ?',
+                [cleanPhone]
+              );
+              
+              if (userData.length > 0 && userData[0].name) {
+                userName = userData[0].name;
+              } else {
+                // Try to get from auction participants table
+                const [participantData] = await db.query(
+                  'SELECT name FROM auction_participants WHERE phone_number = ? AND auction_id = ?',
+                  [cleanPhone, auctionId]
+                );
+                if (participantData.length > 0 && participantData[0].name) {
+                  userName = participantData[0].name;
+                }
+              }
+
+              // Send template SMS using the exact API format from your curl
+              await exports.sendTemplateSMS(phoneNumber, {
+                VAR1: userName,
+                VAR2: title,
+                VAR3: eventDateTime
+              });
+              
               smsCount++;
+              console.log(`✅ Template SMS sent to ${phoneNumber}`);
             } catch (e) {
-              console.error(`❌ Failed to send SMS to ${p}:`, e.message);
+              console.error(`❌ Failed to send Template SMS to ${phoneNumber}:`, e.message);
+              
+              // Fallback to regular SMS if template fails
+              try {
+                const fallbackMessage = `Dear Participant, You are invited to join "${title}" auction on ${eventDateTime}. - Zonictec`;
+                await exports.sendSMS(phoneNumber, fallbackMessage);
+                smsCount++;
+                console.log(`✅ Fallback SMS sent to ${phoneNumber}`);
+              } catch (fallbackError) {
+                console.error(`❌ Fallback SMS also failed for ${phoneNumber}:`, fallbackError.message);
+              }
             }
+            
+            // Delay to avoid rate limiting
             await new Promise(r => setTimeout(r, 500));
           }
         }
       }
     }
+
     // notify creator AND participants
-if (participantList.length) {
-  // Notify creator
-  await notify(created_by, 'participant_added', auctionId,
-    `${participantList.length} participant(s) added to your auction "${title}".`);
-  
-  // Notify each participant
-  const participantMessage = `You've been added to auction "${title}" on ${auction_date} at ${start_time}.`;
-  
-  // Get user IDs for participants by phone numbers
-  const phoneNumbers = participantList.map(p => p.replace(/[^0-9]/g, ''));
-  if (phoneNumbers.length > 0) {
-    const [users] = await db.query(
-      'SELECT id FROM users WHERE phone_number IN (?)',
-      [phoneNumbers]
-    );
-    
-    const participantUserIds = users.map(user => user.id);
-    if (participantUserIds.length > 0) {
-      await notify(participantUserIds, 'added_to_auction', auctionId, participantMessage);
+    if (participantList.length) {
+      // Notify creator
+      await notify(created_by, 'participant_added', auctionId,
+        `${participantList.length} participant(s) added to your auction "${title}".`);
+      
+      // Notify each participant
+      const participantMessage = `You've been added to auction "${title}" on ${auction_date} at ${start_time}.`;
+      
+      // Get user IDs for participants by phone numbers
+      const phoneNumbers = participantList.map(p => p.replace(/[^0-9]/g, ''));
+      if (phoneNumbers.length > 0) {
+        const [users] = await db.query(
+          'SELECT id FROM users WHERE phone_number IN (?)',
+          [phoneNumbers]
+        );
+        
+        const participantUserIds = users.map(user => user.id);
+        if (participantUserIds.length > 0) {
+          await notify(participantUserIds, 'added_to_auction', auctionId, participantMessage);
+        }
+      }
     }
-  }
-}
+
     let uploadedDocs = [];
     if (req.files?.length) {
       for (const file of req.files) {
@@ -286,26 +337,27 @@ if (participantList.length) {
 
     const auction = await Auction.findById(auctionId);
 
-  return res.status(201).json({
-  success: true,
-  message: open_to_all
-    ? `Auction created – open to all suppliers${participantList.length ? ` with ${participantList.length} invited participant(s)` : ''}${smsCount ? `, ${smsCount} SMS sent` : ''}`
-    : `Auction created with ${participantList.length} participant(s)${smsCount ? `, ${smsCount} SMS` : ''}`,
-  auction: {
-    ...auction,
-    end_time,
-    formatted_start_time: formatTimeToAMPM(auction.start_time),
-    formatted_end_time: formatTimeToAMPM(end_time)
-  },
-  invitationResults: {  // ✅ FIXED: Always show actual data
-    totalParticipants: participantList.length,
-    successfulSMS: smsCount,
-    note: open_to_all 
-      ? `Open to all suppliers + ${participantList.length} invited participants`
-      : 'Invited participants only'
-  },
-  documents: uploadedDocs
-});
+    return res.status(201).json({
+      success: true,
+      message: open_to_all
+        ? `Auction created – open to all suppliers${participantList.length ? ` with ${participantList.length} invited participant(s)` : ''}${smsCount ? `, ${smsCount} SMS sent` : ''}`
+        : `Auction created with ${participantList.length} participant(s)${smsCount ? `, ${smsCount} SMS` : ''}`,
+      auction: {
+        ...auction,
+        end_time,
+        formatted_start_time: formatTimeToAMPM(auction.start_time),
+        formatted_end_time: formatTimeToAMPM(end_time)
+      },
+      invitationResults: {
+        totalParticipants: participantList.length,
+        successfulSMS: smsCount,
+        note: open_to_all 
+          ? `Open to all suppliers + ${participantList.length} invited participants`
+          : 'Invited participants only',
+        smsType: 'Template SMS (EasyAuction)'
+      },
+      documents: uploadedDocs
+    });
   } catch (e) {
     console.error('❌ Create auction:', e);
     return res.status(500).json({ success: false, message: 'Server error', error: e.message });
