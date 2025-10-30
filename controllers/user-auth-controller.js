@@ -82,13 +82,15 @@ exports.sendLoginOTP = async (req, res) => {
       return res.status(400).json({ success: false, message: "Phone number is required" });
     }
 
-    // Check if user exists
+    // Check if user exists and get their name
     const [user] = await db.query('SELECT * FROM users WHERE phone_number = ?', [phone_number]);
     if (user.length === 0) {
       return res.status(400).json({ success: false, message: "User not found. Please sign up first." });
     }
 
-    const sessionId = await sendOTP(phone_number);
+    // Pass person_name to sendOTP function
+    const person_name = user[0].person_name || 'User';
+    const sessionId = await sendOTP(phone_number, person_name);
     
     res.json({ 
       success: true, 
