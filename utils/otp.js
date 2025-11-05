@@ -2,18 +2,11 @@ const axios = require('axios');
 const db = require('../db');
 
 const TWO_FACTOR_API_KEY = process.env.TWO_FACTOR_API_KEY;
-const TEMPLATE_NAME = 'SMSTemplate1';
+const TEMPLATE_NAME = 'OTP Template'; // CHANGED FROM SMSTemplate1 to OTP Template
 
 exports.sendOTP = async (phone_number, person_name = 'User') => {
   try {
     const cleanedPhone = phone_number.replace(/\D/g, '');
-    
-    // Check time restriction (10 AM - 9 PM for Service Explicit)
-    const now = new Date();
-    const currentHour = now.getHours();
-    if (currentHour < 10 || currentHour >= 21) {
-      throw new Error('OTP can only be sent between 10:00 AM and 9:00 PM due to telecom regulations. Please try during these hours.');
-    }
     
     // Generate OTP
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -22,43 +15,76 @@ exports.sendOTP = async (phone_number, person_name = 'User') => {
     console.log(`🔑 Sending OTP ${otp} to ${cleanedPhone} for ${person_name}`);
     console.log(`📞 Using template: ${TEMPLATE_NAME}`);
     
-    // CORRECT API ENDPOINT - Use template name at the end
-    const apiUrl = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${cleanedPhone}/${otp}/${TEMPLATE_NAME}`;
-    
-    console.log(`🌐 API URL: ${apiUrl}`);
-    
-    const response = await axios.get(apiUrl, {
-      params: {
-        VAR1: person_name,
-        VAR2: otp
-      },
-      timeout: 15000
-    });
-    
-    const data = response.data;
-    console.log('📨 Template SMS Response:', data);
-    
-    if (data.Status !== 'Success') {
-      throw new Error(`Failed to send OTP: ${data.Details}`);
+    // Try Template SMS first with NEW TEMPLATE NAME
+    try {
+      console.log(`📞 Attempting Template SMS...`);
+      const apiUrl = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${cleanedPhone}/${otp}/${TEMPLATE_NAME}`;
+      
+      console.log(`🌐 API URL: ${apiUrl}`);
+      
+      const response = await axios.get(apiUrl, {
+        params: {
+          VAR1: person_name,
+          VAR2: otp
+        },
+        timeout: 15000
+      });
+      
+      const data = response.data;
+      console.log('📨 Template SMS Response:', data);
+      
+      if (data.Status === 'Success') {
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        
+        await db.query(
+          'INSERT INTO otp_verifications (phone_number, otp, session_id, expires_at, method) VALUES (?, ?, ?, ?, ?)',
+          [cleanedPhone, otp, sessionId, expiresAt, 'TEMPLATE_SMS']
+        );
+        
+        console.log('✅ OTP sent successfully via template SMS');
+        return sessionId;
+      } else {
+        throw new Error(`Template failed: ${data.Details}`);
+      }
+    } catch (templateError) {
+      console.log('🔄 Template SMS failed, trying Transactional SMS...');
+      
+      // Fallback to Transactional SMS
+      const transactionalResponse = await axios.post(
+        `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/ADDON_SERVICES/SEND/TSMS`,
+        `From=TSPENT&To=${cleanedPhone}&Msg=Dear ${person_name}, Your one time password for verification is ${otp}. - TPS ENTERPRISES`,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          timeout: 15000
+        }
+      );
+      
+      const transactionalData = transactionalResponse.data;
+      console.log('📨 Transactional SMS Response:', transactionalData);
+      
+      if (transactionalData.Status === 'Success') {
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        
+        await db.query(
+          'INSERT INTO otp_verifications (phone_number, otp, session_id, expires_at, method) VALUES (?, ?, ?, ?, ?)',
+          [cleanedPhone, otp, sessionId, expiresAt, 'TRANSACTIONAL_SMS']
+        );
+        
+        console.log('✅ OTP sent successfully via transactional SMS');
+        return sessionId;
+      } else {
+        throw new Error(`Transactional SMS also failed: ${transactionalData.Details}`);
+      }
     }
-    
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-    
-    // Store in database
-    await db.query(
-      'INSERT INTO otp_verifications (phone_number, otp, session_id, expires_at, method) VALUES (?, ?, ?, ?, ?)',
-      [cleanedPhone, otp, sessionId, expiresAt, 'TEMPLATE_SMS']
-    );
-    
-    console.log('✅ OTP sent successfully via template SMS');
-    return sessionId; 
     
   } catch (error) {
     console.error('❌ Error sending OTP:', error.message);
     if (error.response) {
       console.error('📡 API Error Response:', error.response.data);
     }
-    throw error;
+    throw new Error(`Failed to send OTP: ${error.message}`);
   }
 };
 
