@@ -115,41 +115,36 @@ exports.verifyOTP = async (sessionId, otp) => {
     console.log(`Verifying OTP for session: ${sessionId}`);
     console.log(`User entered OTP: ${otp}`);
 
-    // First, let's check what's in the database for debugging
-    const [debugRecords] = await db.query(
-      `SELECT * FROM otp_verifications WHERE session_id = ?`,
-      [sessionId]
-    );
-
-    console.log('Debug - Database record:', debugRecords[0]);
-
+    // Check without expiry time first (temporary fix)
     const [records] = await db.query(
       `SELECT * FROM otp_verifications 
-       WHERE session_id = ? AND verified = FALSE AND expires_at > NOW()`,
+       WHERE session_id = ? AND verified = FALSE`,
       [sessionId]
     );
 
-    console.log('Valid records found:', records.length);
+    console.log('Records found:', records.length);
 
     if (records.length === 0) {
-      console.log(`OTP expired or invalid session`);
-      
-      // More detailed error message
-      if (debugRecords.length > 0) {
-        const record = debugRecords[0];
-        const now = new Date();
-        const expires = new Date(record.expires_at);
-        console.log(`Current time: ${now}`);
-        console.log(`Expiry time: ${expires}`);
-        console.log(`Is expired: ${expires < now}`);
-        console.log(`Already verified: ${record.verified}`);
-      }
-      
+      console.log(`OTP not found or already verified`);
       return { isValid: false, message: "OTP expired or invalid session" };
     }
 
-    const storedOTP = records[0].otp;
+    const record = records[0];
+    const storedOTP = record.otp;
+    
+    // Manual expiry check (10 minutes)
+    const createdTime = new Date(record.created_at).getTime();
+    const currentTime = new Date().getTime();
+    const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
+    
+    if (currentTime - createdTime > tenMinutes) {
+      console.log(`OTP expired manually`);
+      return { isValid: false, message: "OTP expired" };
+    }
+
     console.log(`Stored OTP: ${storedOTP}, Entered OTP: ${otp}`);
+    console.log(`Created: ${record.created_at}, Current: ${new Date()}`);
+    console.log(`Time difference: ${(currentTime - createdTime) / 1000} seconds`);
 
     if (storedOTP !== otp) {
       console.log(`OTP mismatch`);
