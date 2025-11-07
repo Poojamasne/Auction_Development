@@ -135,7 +135,6 @@ exports.verifyOTP = async (sessionId, otp) => {
     );
 
     console.log(`OTP verified successfully`);
-
     return { isValid: true, message: "OTP verified successfully" };
   } catch (error) {
     console.error(`Error verifying OTP:`, error.message);
