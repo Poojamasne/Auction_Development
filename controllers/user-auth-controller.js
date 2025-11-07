@@ -7,7 +7,6 @@ exports.signup = async (req, res) => {
   try {
     const { company_name, phone_number, person_name, email, company_address, company_product_service, gstn } = req.body;
 
-    // Validation rules
     if (!company_name || company_name.trim().length < 2) {
       return res.status(400).json({ success: false, message: "Company name is required (min 2 characters)" });
     }
@@ -28,18 +27,15 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ success: false, message: "Company address must be less than 255 characters" });
     }
 
-    // GSTN validation (optional)
     if (gstn && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}[Z]{1}[0-9A-Z]{1}$/.test(gstn)) {
       return res.status(400).json({ success: false, message: "Invalid GSTN format" });
     }
 
-    // Check if phone already exists
     const [existingUser] = await db.query('SELECT * FROM users WHERE phone_number = ?', [phone_number]);
     if (existingUser.length > 0) {
       return res.status(400).json({ success: false, message: "User already exists with this phone number" });
     }
 
-    // Insert into DB (add gstn column)
     const [result] = await db.query(
       'INSERT INTO users (company_name, phone_number, person_name, email, company_address, company_product_service, gstn) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [company_name, phone_number, person_name, email, company_address, company_product_service, gstn]
@@ -47,7 +43,6 @@ exports.signup = async (req, res) => {
 
     const userId = result.insertId;
 
-    // Generate JWT token
     const token = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRATION });
 
     res.status(201).json({ 
@@ -72,8 +67,6 @@ exports.signup = async (req, res) => {
   }
 };
 
-
-
 exports.sendLoginOTP = async (req, res) => {
   try {
     const { phone_number } = req.body;
@@ -82,13 +75,11 @@ exports.sendLoginOTP = async (req, res) => {
       return res.status(400).json({ success: false, message: "Phone number is required" });
     }
 
-    // Check if user exists and get their name
     const [user] = await db.query('SELECT * FROM users WHERE phone_number = ?', [phone_number]);
     if (user.length === 0) {
       return res.status(400).json({ success: false, message: "User not found. Please sign up first." });
     }
 
-    // Pass person_name to sendOTP function
     const person_name = user[0].person_name || 'User';
     const sessionId = await sendOTP(phone_number, person_name);
     
@@ -119,9 +110,9 @@ exports.verifyLoginOTP = async (req, res) => {
       });
     }
 
-    const isValid = await verifyOTP(sessionId, otp);
-    if (!isValid) {
-      return res.status(400).json({ success: false, message: "Invalid OTP" });
+    const result = await verifyOTP(sessionId, otp);
+    if (!result.isValid) {
+      return res.status(400).json({ success: false, message: result.message });
     }
 
     const [user] = await db.query('SELECT * FROM users WHERE phone_number = ?', [phone_number]);
@@ -180,7 +171,6 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// Edit Profile by ID - User can only edit their own profile
 exports.editProfileByID = async (req, res) => {
   try {
     const userId = req.user.userId;
