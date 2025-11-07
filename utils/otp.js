@@ -14,6 +14,9 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
     console.log(`Sending OTP to: ${cleanedPhone}`);
     console.log(`OTP: ${otp}`);
 
+    // Calculate expiry time (10 minutes from now)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
     // Method 1: Template SMS (Primary)
     try {
       const templateUrl = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${cleanedPhone}/${otp}/${TEMPLATE_NAME}?var1=${encodeURIComponent(person_name)}`;
@@ -27,8 +30,6 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
       console.log("Template SMS Response:", response.data);
 
       if (response.data.Status === "Success") {
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
         await db.query(
           `INSERT INTO otp_verifications (phone_number, otp, session_id, expires_at, verified)
            VALUES (?, ?, ?, ?, ?)`,
@@ -58,8 +59,6 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
         console.log("Simple SMS Response:", simpleResponse.data);
 
         if (simpleResponse.data.Status === "Success") {
-          const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
           await db.query(
             `INSERT INTO otp_verifications (phone_number, otp, session_id, expires_at, verified)
              VALUES (?, ?, ?, ?, ?)`,
@@ -89,8 +88,6 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
         console.log("Transactional SMS Response:", fallbackResponse.data);
 
         if (fallbackResponse.data.Status === "Success") {
-          const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
           await db.query(
             `INSERT INTO otp_verifications (phone_number, otp, session_id, expires_at, verified)
              VALUES (?, ?, ?, ?, ?)`,
@@ -118,18 +115,41 @@ exports.verifyOTP = async (sessionId, otp) => {
     console.log(`Verifying OTP for session: ${sessionId}`);
     console.log(`User entered OTP: ${otp}`);
 
+    // First, let's check what's in the database for debugging
+    const [debugRecords] = await db.query(
+      `SELECT * FROM otp_verifications WHERE session_id = ?`,
+      [sessionId]
+    );
+
+    console.log('Debug - Database record:', debugRecords[0]);
+
     const [records] = await db.query(
       `SELECT * FROM otp_verifications 
        WHERE session_id = ? AND verified = FALSE AND expires_at > NOW()`,
       [sessionId]
     );
 
+    console.log('Valid records found:', records.length);
+
     if (records.length === 0) {
       console.log(`OTP expired or invalid session`);
+      
+      // More detailed error message
+      if (debugRecords.length > 0) {
+        const record = debugRecords[0];
+        const now = new Date();
+        const expires = new Date(record.expires_at);
+        console.log(`Current time: ${now}`);
+        console.log(`Expiry time: ${expires}`);
+        console.log(`Is expired: ${expires < now}`);
+        console.log(`Already verified: ${record.verified}`);
+      }
+      
       return { isValid: false, message: "OTP expired or invalid session" };
     }
 
     const storedOTP = records[0].otp;
+    console.log(`Stored OTP: ${storedOTP}, Entered OTP: ${otp}`);
 
     if (storedOTP !== otp) {
       console.log(`OTP mismatch`);
