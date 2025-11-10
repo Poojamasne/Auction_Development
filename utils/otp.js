@@ -2,7 +2,7 @@ const axios = require('axios');
 const db = require('../db');
 
 const TWO_FACTOR_API_KEY = "64896017-8585-11f0-a562-0200cd936042";
-const TEMPLATE_NAME = "OTP Template";
+const TEMPLATE_NAME = "SMS OTP";   // ✅ Updated Template Name from 2Factor
 
 exports.sendOTP = async (phone_number, person_name = "User") => {
   try {
@@ -14,18 +14,15 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
     console.log(`Sending OTP to: ${cleanedPhone}`);
     console.log(`OTP: ${otp}`);
 
-    // Calculate expiry time (10 minutes from now)
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Method 1: Template SMS (Primary)
+    // ✅ Method 1: Approved TEMPLATE SMS on 2Factor
     try {
-      const templateUrl = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${cleanedPhone}/${otp}/${TEMPLATE_NAME}?var1=${encodeURIComponent(person_name)}`;
-      
+      const templateUrl = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${cleanedPhone}/${otp}/${encodeURIComponent(TEMPLATE_NAME)}?var1=${encodeURIComponent(person_name)}`;
+
       console.log(`Trying Template SMS: ${templateUrl}`);
 
-      const response = await axios.get(templateUrl, {
-        timeout: 15000
-      });
+      const response = await axios.get(templateUrl, { timeout: 15000 });
 
       console.log("Template SMS Response:", response.data);
 
@@ -36,25 +33,21 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
           [cleanedPhone, otp, sessionId, expiresAt, false]
         );
 
-        console.log(`OTP sent successfully via TEMPLATE SMS`);
+        console.log(`OTP sent successfully using APPROVED TEMPLATE SMS ✅`);
         return sessionId;
       }
 
       throw new Error(`Template SMS failed: ${response.data.Details}`);
     } catch (err) {
       console.log(`Template SMS failed: ${err.message}`);
-      
-      // Method 2: Simple SMS (Fallback)
-      console.log(`Trying SIMPLE SMS fallback...`);
-      
+
+      // Fallback: Simple SMS (if template fails)
       try {
         const simpleSmsUrl = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${cleanedPhone}/${otp}`;
-        
-        console.log(`Trying Simple SMS: ${simpleSmsUrl}`);
-        
-        const simpleResponse = await axios.get(simpleSmsUrl, {
-          timeout: 15000
-        });
+
+        console.log(`Trying Simple SMS fallback: ${simpleSmsUrl}`);
+
+        const simpleResponse = await axios.get(simpleSmsUrl, { timeout: 15000 });
 
         console.log("Simple SMS Response:", simpleResponse.data);
 
@@ -65,20 +58,18 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
             [cleanedPhone, otp, sessionId, expiresAt, false]
           );
 
-          console.log(`OTP sent successfully via SIMPLE SMS`);
+          console.log(`OTP sent successfully via SIMPLE SMS ✅`);
           return sessionId;
         }
       } catch (simpleError) {
         console.log(`Simple SMS failed: ${simpleError.message}`);
       }
 
-      // Method 3: Transactional SMS (Final Fallback)
-      console.log(`Trying TRANSACTIONAL SMS fallback...`);
-      
+      // Final Fallback: Transactional SMS
       try {
         const fallbackResponse = await axios.post(
           `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/ADDON_SERVICES/SEND/TSMS`,
-          `From=TSPENT&To=${cleanedPhone}&Msg=Dear ${encodeURIComponent(person_name)}, Your OTP for verification is ${otp}. - TPS ENTERPRISES`,
+          `From=TSPENT&To=${cleanedPhone}&Msg=Dear ${encodeURIComponent(person_name)}, your one-time password (OTP) for EasyEAuction account verification is ${otp}. - TPS ENTERPRISES`,
           {
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             timeout: 15000
@@ -94,7 +85,7 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
             [cleanedPhone, otp, sessionId, expiresAt, false]
           );
 
-          console.log(`OTP sent successfully via TRANSACTIONAL SMS`);
+          console.log(`OTP sent successfully via TRANSACTIONAL SMS ✅`);
           return sessionId;
         } else {
           throw new Error(`Transactional SMS failed: ${fallbackResponse.data.Details}`);
@@ -107,61 +98,5 @@ exports.sendOTP = async (phone_number, person_name = "User") => {
   } catch (error) {
     console.error(`Error sending OTP:`, error.message);
     throw new Error(`Failed to send OTP: ${error.message}`);
-  }
-};
-
-exports.verifyOTP = async (sessionId, otp) => {
-  try {
-    console.log(`Verifying OTP for session: ${sessionId}`);
-    console.log(`User entered OTP: ${otp}`);
-
-    // Check without expiry time first (temporary fix)
-    const [records] = await db.query(
-      `SELECT * FROM otp_verifications 
-       WHERE session_id = ? AND verified = FALSE`,
-      [sessionId]
-    );
-
-    console.log('Records found:', records.length);
-
-    if (records.length === 0) {
-      console.log(`OTP not found or already verified`);
-      return { isValid: false, message: "OTP expired or invalid session" };
-    }
-
-    const record = records[0];
-    const storedOTP = record.otp;
-    
-    // Manual expiry check (10 minutes)
-    const createdTime = new Date(record.created_at).getTime();
-    const currentTime = new Date().getTime();
-    const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
-    
-    if (currentTime - createdTime > tenMinutes) {
-      console.log(`OTP expired manually`);
-      return { isValid: false, message: "OTP expired" };
-    }
-
-    console.log(`Stored OTP: ${storedOTP}, Entered OTP: ${otp}`);
-    console.log(`Created: ${record.created_at}, Current: ${new Date()}`);
-    console.log(`Time difference: ${(currentTime - createdTime) / 1000} seconds`);
-
-    if (storedOTP !== otp) {
-      console.log(`OTP mismatch`);
-      return { isValid: false, message: "Invalid OTP" };
-    }
-
-    await db.query(
-      `UPDATE otp_verifications 
-       SET verified = TRUE 
-       WHERE session_id = ?`,
-      [sessionId]
-    );
-
-    console.log(`OTP verified successfully`);
-    return { isValid: true, message: "OTP verified successfully" };
-  } catch (error) {
-    console.error(`Error verifying OTP:`, error.message);
-    return { isValid: false, message: "Server error during OTP verification" };
   }
 };
