@@ -9,7 +9,7 @@ const TEMPLATES = {
   NEW_AUCTION: {
     name: 'New Auction Created', // ✅ Exact template name
     senderId: 'EZEAUC', // ✅ Exact sender ID
-    variables: ['VAR1', 'VAR2'],
+    variables: ['VAR1', 'VAR2', 'VAR3'],
     template: 'Hello #VAR1#, a new auction has been created for you. Details: #VAR2# available on your dashboard. – TPS Enterprises',
     type: 'TRANSACTIONAL'
   },
@@ -113,17 +113,19 @@ exports.sendTemplateSMS = async (phone_number, templateParams, templateType = 'N
  * Send New Auction Created Notification (Transactional)
  * Uses: Template "New Auction Created" with Sender ID "EZEAUC"
  */
-exports.sendNewAuctionNotification = async (phone_number, userName, auctionDetails) => {
+exports.sendNewAuctionNotification = async (phone_number, userName, auctionTitle, eventDateTime) => {
   try {
     console.log(`🎯 Sending NEW AUCTION notification to ${phone_number}`);
     console.log(`📝 Using Template: "New Auction Created"`);
     console.log(`📝 Sender ID: EZEAUC`);
     console.log(`👤 User: ${userName}`);
-    console.log(`📋 Auction: ${auctionDetails}`);
+    console.log(`📋 Auction: ${auctionTitle}`);
+    console.log(`📅 Event: ${eventDateTime}`);
     
     return await exports.sendTemplateSMS(phone_number, {
       VAR1: userName,
-      VAR2: auctionDetails
+      VAR2: auctionTitle,
+      VAR3: eventDateTime
     }, 'NEW_AUCTION');
   } catch (error) {
     console.error('❌ Error sending new auction notification:', error.message);
@@ -158,7 +160,7 @@ exports.sendAuctionReminder = async (phone_number, userName, eventDetails) => {
  */
 exports.send10MinuteReminder = async (phone_number, userName, auctionTitle) => {
   try {
-    const reminderText = `${auctionTitle} starts in 10 minutes`;
+    const reminderText = `${auctionTitle} starting in 10 minutes`;
     
     console.log(`⏰ Sending 10-minute reminder to ${phone_number}`);
     
@@ -205,6 +207,33 @@ exports.checkTransactionalBalance = async () => {
     
   } catch (error) {
     console.error('❌ Transactional balance check error:', error.message);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+/**
+ * Check PROMOTIONAL SMS balance (if you have promotional credits)
+ */
+exports.checkPromotionalBalance = async () => {
+  try {
+    const apiUrl = `https://2factor.in/API/V1/${TRANSACTIONAL_API_KEY}/BALANCE/PSMS`;
+    
+    const response = await axios.get(apiUrl, { timeout: 10000 });
+    const data = response.data;
+    
+    console.log('💰 Promotional Balance check response:', data);
+    
+    return {
+      success: data.Status === 'Success',
+      balance: data.Details,
+      details: data
+    };
+    
+  } catch (error) {
+    console.error('❌ Promotional balance check error:', error.message);
     return {
       success: false,
       error: error.message
@@ -271,7 +300,8 @@ exports.testAllTemplates = async (testPhoneNumber) => {
       const result1 = await exports.sendNewAuctionNotification(
         testPhoneNumber,
         'Test User',
-        'Car Auction - March 28, 2024 at 3:00 PM'
+        'Car Auction - March 28, 2024',
+        '28th March at 3:00 PM'
       );
       results.push({ 
         template: 'NEW_AUCTION', 
@@ -323,3 +353,6 @@ exports.testAllTemplates = async (testPhoneNumber) => {
     throw error;
   }
 };
+
+// Export templates for external use
+exports.TEMPLATES = TEMPLATES;
