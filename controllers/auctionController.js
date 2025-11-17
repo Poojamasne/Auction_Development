@@ -79,6 +79,144 @@ async function isUserBlocked(userId) {
     return true; // On error, consider blocked for safety
   }
 }
+// ------------------------------------------------------------------
+// NEW: 10-minute reminder functionality
+// ------------------------------------------------------------------
+let reminderInterval;
+
+/**
+ * Send 10-minute reminder SMS for upcoming auctions
+ */
+async function send10MinuteReminders() {
+  try {
+    const now = new Date();
+    const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes from now
+    
+    console.log('⏰ Checking for auctions starting in 10 minutes...');
+    
+    // Find auctions that start in exactly 10 minutes
+    const [auctions] = await db.query(`
+      SELECT a.id, a.title, a.auction_date, a.start_time, a.open_to_all,
+             GROUP_CONCAT(DISTINCT ap.phone_number) as participant_phones,
+             GROUP_CONCAT(DISTINCT u.phone_number) as bidder_phones
+      FROM auctions a
+      LEFT JOIN auction_participants ap ON a.id = ap.auction_id AND ap.status IN ('joined', 'approved')
+      LEFT JOIN bids b ON a.id = b.auction_id
+      LEFT JOIN users u ON b.user_id = u.id
+      WHERE a.status = 'upcoming'
+        AND CONCAT(a.auction_date, ' ', a.start_time) BETWEEN DATE_SUB(NOW(), INTERVAL 1 MINUTE) AND DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+      GROUP BY a.id
+    `);
+    
+    for (const auction of auctions) {
+      try {
+        console.log(`🎯 Sending 10-minute reminders for auction: ${auction.title}`);
+        
+        // Get all phone numbers to send reminders to
+        const phoneNumbers = new Set();
+        
+        // Add participants
+        if (auction.participant_phones) {
+          auction.participant_phones.split(',').forEach(phone => {
+            if (phone) phoneNumbers.add(phone);
+          });
+        }
+        
+        // Add bidders (for open auctions)
+        if (auction.open_to_all && auction.bidder_phones) {
+          auction.bidder_phones.split(',').forEach(phone => {
+            if (phone) phoneNumbers.add(phone);
+          });
+        }
+        
+        const phoneList = Array.from(phoneNumbers);
+        console.log(`📱 Sending reminders to ${phoneList.length} participants for auction ${auction.id}`);
+        
+        // Format auction details for SMS
+        const formattedDate = new Date(auction.auction_date).toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        });
+        const formattedTime = formatTimeToAMPM(auction.start_time);
+        const eventDateTime = `${formattedDate} at ${formattedTime}`;
+        
+        let smsCount = 0;
+        let smsErrors = [];
+        
+        // Send reminder SMS to each phone number
+        for (const phoneNumber of phoneList) {
+          try {
+            console.log(`⏰ Sending 10-minute reminder to: ${phoneNumber}`);
+            
+            // Get user name
+            let userName = 'Participant';
+            const cleanPhone = phoneNumber.replace(/\D/g, '');
+            const [userData] = await db.query(
+              'SELECT person_name, company_name FROM users WHERE phone_number = ?',
+              [cleanPhone]
+            );
+            
+            if (userData.length > 0) {
+              if (userData[0].person_name) {
+                userName = userData[0].person_name;
+              } else if (userData[0].company_name) {
+                userName = userData[0].company_name;
+              }
+            }
+            
+            // Send reminder using AuctionEventReminder template
+            await smsService.sendAuctionReminder(
+              phoneNumber,
+              userName,
+              `${auction.title} starting in 10 minutes`
+            );
+            
+            smsCount++;
+            console.log(`✅ 10-minute reminder sent successfully to ${phoneNumber}`);
+            
+          } catch (smsError) {
+            console.error(`❌ 10-minute reminder failed for ${phoneNumber}:`, smsError.message);
+            smsErrors.push({
+              phone: phoneNumber,
+              error: smsError.message
+            });
+          }
+          
+          // Delay to avoid rate limiting
+          await new Promise(r => setTimeout(r, 500));
+        }
+        
+        console.log(`📊 10-minute reminders summary for auction ${auction.id}:`);
+        console.log(`✅ Successful: ${smsCount}`);
+        console.log(`❌ Failed: ${smsErrors.length}`);
+        
+      } catch (auctionError) {
+        console.error(`❌ Error processing 10-minute reminder for auction ${auction.id}:`, auctionError.message);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ 10-minute reminder check error:', error.message);
+  }
+}
+
+/**
+ * Start automatic 10-minute reminders
+ */
+function start10MinuteReminders() {
+  if (reminderInterval) clearInterval(reminderInterval);
+  
+  // Run immediately on startup
+  send10MinuteReminders().catch(console.error);
+  
+  // Run every minute to catch auctions starting in 10 minutes
+  reminderInterval = setInterval(() => {
+    send10MinuteReminders().catch(console.error);
+  }, 60000); // Check every minute
+  
+  console.log('⏰ 10-minute reminder service started (checking every minute)');
+}
 
 // ------------------------------------------------------------------
 // status updater & cron
@@ -122,9 +260,11 @@ function startAutomaticStatusUpdates() {
   console.log('✅ Auto status updates every 30 s (IST)');
 }
 startAutomaticStatusUpdates();
+start10MinuteReminders(); // ← ADD THIS LINE
 
 process.on('SIGINT', () => {
   if (statusUpdateInterval) { clearInterval(statusUpdateInterval); console.log('❌ Auto updates stopped'); }
+  if (reminderInterval) { clearInterval(reminderInterval); console.log('❌ 10-minute reminders stopped'); } // ← ADD THIS LINE
   process.exit(0);
 });
 
@@ -140,9 +280,6 @@ exports.autoUpdateAuctionStatus = async (req, res) => {
   }
 };
 
-/* ----------------------------------------------------------
-   CREATE AUCTION – stores end_time in DB
----------------------------------------------------------- */
 /* ----------------------------------------------------------
    CREATE AUCTION – stores end_time in DB
 ---------------------------------------------------------- */
