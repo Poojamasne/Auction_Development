@@ -136,10 +136,13 @@ async function send10MinuteReminders() {
             console.log(`⏰ Sending 10-minute reminder to: ${participant.phone_number}`);
             
             const userName = participant.person_name || participant.company_name || 'Participant';
-            const message = `Hello ${userName}, reminder: ${auction.title} starting in 10 minutes. Join now! - TPS Enterprises`;
-            
-            // ✅ USE PROMOTIONAL SMS INSTEAD
-            await smsService.sendPromotionalSMS(participant.phone_number, message);
+const eventDetails = `${auction.title} starting in 10 minutes`;
+
+// ✅ USE TRANSACTIONAL TEMPLATE INSTEAD OF PROMOTIONAL
+await smsService.sendTemplateSMS(participant.phone_number, {
+  VAR1: userName,
+  VAR2: eventDetails
+}, 'AUCTION_REMINDER');
             
             smsCount++;
             console.log(`✅ Promotional reminder sent successfully to ${participant.phone_number}`);
@@ -189,6 +192,172 @@ function start10MinuteReminders() {
   }, 60000); // Check every minute
   
   console.log('✅ 10-minute reminder service started (checking every minute)');
+}
+
+// ------------------------------------------------------------------
+// NEW: Upcoming auction notification functionality (24/7)
+// ------------------------------------------------------------------
+
+/**
+ * Send upcoming auction notification to all participants
+ * Uses: Template "AuctionEventReminder" with Sender ID "EAUCIN"
+ */
+async function sendUpcomingAuctionNotification(auctionId) {
+  try {
+    console.log(`\n🎯 [DEBUG] STARTING UPCOMING AUCTION NOTIFICATION FOR AUCTION ${auctionId}`);
+    
+    // 1. Check if auction exists
+    const auction = await Auction.findById(auctionId);
+    if (!auction) {
+      console.error('❌ [DEBUG] Auction not found:', auctionId);
+      return { success: false, message: 'Auction not found' };
+    }
+
+    console.log(`📋 [DEBUG] Auction found: ${auction.title}`);
+    console.log(`📊 [DEBUG] Auction status: ${auction.status}`);
+    console.log(`📅 [DEBUG] Auction date: ${auction.auction_date}`);
+    console.log(`⏰ [DEBUG] Auction time: ${auction.start_time}`);
+
+    // 2. Check auction status
+    if (auction.status !== 'upcoming') {
+      console.log(`⏩ [DEBUG] Skipping - Auction status is "${auction.status}", not "upcoming"`);
+      return { success: false, message: 'Auction is not upcoming' };
+    }
+
+    // 3. Get all participants for this auction
+    const [participants] = await db.query(`
+      SELECT DISTINCT ap.phone_number, u.person_name, u.company_name
+      FROM auction_participants ap
+      LEFT JOIN users u ON u.phone_number = ap.phone_number
+      WHERE ap.auction_id = ?
+        AND ap.phone_number IS NOT NULL
+        AND ap.phone_number != ''
+    `, [auctionId]);
+
+    console.log(`📱 [DEBUG] Found ${participants.length} participants for auction ${auctionId}`);
+    
+    // Debug: Log participant details
+    participants.forEach((p, index) => {
+      console.log(`   👤 Participant ${index + 1}: ${p.phone_number} - ${p.person_name || p.company_name || 'No Name'}`);
+    });
+
+    if (participants.length === 0) {
+      console.log('❌ [DEBUG] No participants found for this auction. SMS cannot be sent.');
+      return { 
+        success: false, 
+        message: 'No participants found for this auction',
+        sentCount: 0,
+        errorCount: 0,
+        errors: []
+      };
+    }
+
+    let smsCount = 0;
+    let smsErrors = [];
+
+    // Format event details for SMS
+    const formattedDate = new Date(auction.auction_date).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+    const formattedTime = formatTimeToAMPM(auction.start_time);
+    const eventDetails = `${auction.title} on ${formattedDate} at ${formattedTime}`;
+
+    console.log(`📝 [DEBUG] Using Template: "AuctionEventReminder"`);
+    console.log(`📮 [DEBUG] Sender ID: EAUCIN`);
+    console.log(`📅 [DEBUG] Event Details: ${eventDetails}`);
+    console.log(`🔧 [DEBUG] SMS Service: ${typeof smsService.sendTemplateSMS}`);
+
+    // Send template SMS to each participant
+    for (const participant of participants) {
+      try {
+        if (!participant.phone_number) {
+          console.log(`⏩ [DEBUG] Skipping participant - no phone number`);
+          continue;
+        }
+
+        console.log(`\n🚀 [DEBUG] Sending SMS to: ${participant.phone_number}`);
+        
+        const userName = participant.person_name || participant.company_name || 'Participant';
+
+        console.log(`👤 [DEBUG] User Name: ${userName}`);
+        console.log(`📋 [DEBUG] Event Details: ${eventDetails}`);
+        console.log(`📦 [DEBUG] Template Variables: VAR1="${userName}", VAR2="${eventDetails}"`);
+
+        // ✅ USE CORRECT VARIABLES: Only VAR1 and VAR2 as per DLT
+        const smsResult = await smsService.sendTemplateSMS(participant.phone_number, {
+          VAR1: userName,
+          VAR2: eventDetails
+        }, 'AUCTION_REMINDER');
+        
+        console.log(`✅ [DEBUG] SMS sent successfully to ${participant.phone_number}:`, smsResult);
+        smsCount++;
+        
+      } catch (smsError) {
+        console.error(`❌ [DEBUG] Failed to send to ${participant.phone_number}:`, smsError.message);
+        console.error(`❌ [DEBUG] Full error:`, smsError);
+        
+        smsErrors.push({
+          phone: participant.phone_number,
+          error: smsError.message,
+          stack: smsError.stack
+        });
+      }
+      
+      // Delay to avoid rate limiting
+      console.log(`⏳ [DEBUG] Waiting 1 second before next SMS...`);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    console.log(`\n📊 [DEBUG] UPCOMING AUCTION NOTIFICATION SUMMARY:`);
+    console.log(`✅ Successful: ${smsCount}`);
+    console.log(`❌ Failed: ${smsErrors.length}`);
+    
+    if (smsErrors.length > 0) {
+      console.log(`🔍 [DEBUG] Error details:`, smsErrors);
+    }
+
+    return {
+      success: smsCount > 0,
+      sentCount: smsCount,
+      errorCount: smsErrors.length,
+      errors: smsErrors,
+      message: smsCount > 0 
+        ? `Sent ${smsCount} upcoming auction notifications successfully`
+        : `Failed to send any notifications. ${smsErrors.length} errors.`
+    };
+
+  } catch (error) {
+    console.error('❌ [DEBUG] Error in sendUpcomingAuctionNotification:', error.message);
+    console.error('❌ [DEBUG] Full error stack:', error.stack);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  }
+}
+
+/**
+ * Send immediate upcoming auction notification when auction is created
+ */
+async function sendImmediateUpcomingNotification(auctionId) {
+  try {
+    console.log(`\n🚀 SENDING IMMEDIATE UPCOMING NOTIFICATION FOR NEW AUCTION ${auctionId}`);
+    const result = await sendUpcomingAuctionNotification(auctionId);
+    
+    if (result.success) {
+      console.log(`✅ Immediate upcoming notification sent successfully for auction ${auctionId}`);
+    } else {
+      console.log(`❌ Failed to send immediate upcoming notification for auction ${auctionId}`);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error sending immediate upcoming notification:', error.message);
+    return { success: false, error: error.message };
+  }
 }
 
 // ------------------------------------------------------------------
@@ -376,12 +545,13 @@ exports.createAuction = async (req, res) => {
                 console.log(`👤 Found user name: ${userName}`);
               }
 
-              // Send template SMS (EXACTLY like your curl)
-              await smsService.sendTemplateSMS(phoneNumber, {
-                VAR1: userName,
-                VAR2: title,
-                VAR3: eventDateTime
-              });
+              // ✅ CORRECTED: Use only 2 variables as per DLT approval
+// VAR1 = User Name, VAR2 = Auction Title
+await smsService.sendTemplateSMS(phoneNumber, {
+  VAR1: userName,
+  VAR2: title
+  // ❌ REMOVED VAR3 as DLT template only has 2 variables
+}, 'NEW_AUCTION');
               
               smsCount++;
               console.log(`✅ Template SMS sent successfully to ${phoneNumber}`);
@@ -2285,6 +2455,42 @@ exports.getApprovedUsers = async (_req, res) => {
       success: false, 
       message: 'Server error',
       error: e.message 
+    });
+  }
+};
+
+
+// ------------------------------------------------------------------
+// Manual trigger for upcoming auction notifications
+// ------------------------------------------------------------------
+exports.triggerUpcomingAuctionNotifications = async (req, res) => {
+  try {
+    const { auction_id } = req.body;
+    
+    if (!auction_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'auction_id is required'
+      });
+    }
+
+    console.log(`\n🔔 MANUALLY TRIGGERING UPCOMING NOTIFICATION FOR AUCTION ${auction_id}`);
+    const result = await sendUpcomingAuctionNotification(auction_id);
+    
+    return res.json({
+      success: result.success,
+      message: result.success 
+        ? `Upcoming auction notifications sent successfully for auction ${auction_id}`
+        : `Failed to send upcoming notifications: ${result.message || result.error}`,
+      result
+    });
+    
+  } catch (error) {
+    console.error('❌ Trigger upcoming notifications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
     });
   }
 };
