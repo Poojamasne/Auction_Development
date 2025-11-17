@@ -27,7 +27,10 @@ const TEMPLATES = {
  */
 exports.sendTemplateSMS = async (phone_number, templateParams, templateType = 'NEW_AUCTION') => {
   try {
-    console.log(`🔑 Using Transactional API Key: ${TRANSACTIONAL_API_KEY.substring(0, 8)}...`);
+    console.log(`\n🔍 DEBUG SMS SENDING:`);
+    console.log(`📱 Original phone number: ${phone_number}`);
+    console.log(`📋 Template type: ${templateType}`);
+    console.log(`📝 Template params:`, templateParams);
     
     // Get template configuration
     const templateConfig = TEMPLATES[templateType];
@@ -37,7 +40,7 @@ exports.sendTemplateSMS = async (phone_number, templateParams, templateType = 'N
     
     // Clean and format phone number
     const cleanedPhone = phone_number.replace(/\D/g, '');
-    console.log(`📱 Original phone: ${phone_number}, Cleaned: ${cleanedPhone}`);
+    console.log(`🔧 Cleaned phone: ${cleanedPhone}`);
     
     let formattedPhone = cleanedPhone;
     if (formattedPhone.startsWith('0')) {
@@ -47,29 +50,25 @@ exports.sendTemplateSMS = async (phone_number, templateParams, templateType = 'N
       formattedPhone = '91' + formattedPhone;
     }
     
-    console.log(`📱 Final formatted phone: ${formattedPhone}`);
-    console.log(`🎯 Using Template: "${templateConfig.name}"`);
-    console.log(`📝 Sender ID: ${templateConfig.senderId}`);
-    console.log(`📋 Template Type: ${templateConfig.type}`);
-    console.log(`📋 Template Parameters:`, templateParams);
+    console.log(`✅ Final formatted phone: ${formattedPhone}`);
+    console.log(`📄 Using template: "${templateConfig.name}"`);
+    console.log(`📮 Sender ID: ${templateConfig.senderId}`);
     
-    // ✅ TRANSACTIONAL TSMS ENDPOINT
+    // Rest of your existing code...
     const apiUrl = `https://2factor.in/API/V1/${TRANSACTIONAL_API_KEY}/ADDON_SERVICES/SEND/TSMS`;
     
-    // Create FormData with EXACT template configuration
     const formData = new FormData();
-    
     formData.append('From', templateConfig.senderId);
     formData.append('To', formattedPhone);
     formData.append('TemplateName', templateConfig.name);
     
-    // Add variables based on template requirements
     templateConfig.variables.forEach(variable => {
-      formData.append(variable, templateParams[variable] || '');
+      const value = templateParams[variable] || '';
+      console.log(`📦 Setting ${variable} = "${value}"`);
+      formData.append(variable, value);
     });
 
-    console.log('🌐 Calling TRANSACTIONAL Template SMS API (TSMS)...');
-    console.log('🔗 URL:', apiUrl);
+    console.log('🌐 Making API call to 2factor...');
     
     const response = await axios.post(apiUrl, formData, {
       headers: {
@@ -79,10 +78,10 @@ exports.sendTemplateSMS = async (phone_number, templateParams, templateType = 'N
     });
     
     const data = response.data;
-    console.log('📊 Full API Response:', JSON.stringify(data, null, 2));
+    console.log('📊 API Response:', JSON.stringify(data, null, 2));
     
     if (data.Status === 'Success') {
-      console.log('✅ Transactional Template SMS sent successfully!');
+      console.log('✅ SMS sent successfully!');
       return {
         success: true,
         status: 'sent',
@@ -96,19 +95,17 @@ exports.sendTemplateSMS = async (phone_number, templateParams, templateType = 'N
     }
     
   } catch (error) {
-    console.error('❌ Error sending transactional template SMS:');
+    console.error('❌ SMS sending failed:');
     console.error('Error message:', error.message);
     
     if (error.response) {
-      console.error('📊 API Response Status:', error.response.status);
-      console.error('📊 API Response Data:', error.response.data);
-      throw new Error(`Transactional SMS failed: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+      console.error('📊 Response status:', error.response.status);
+      console.error('📊 Response data:', error.response.data);
     }
     
-    throw new Error(`Transactional SMS failed: ${error.message}`);
+    throw error;
   }
 };
-
 /**
  * Send New Auction Created Notification (Transactional)
  * Uses: Template "New Auction Created" with Sender ID "EZEAUC"
