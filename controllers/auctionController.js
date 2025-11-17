@@ -90,11 +90,10 @@ let reminderInterval;
 async function send10MinuteReminders() {
   try {
     const now = new Date();
-    const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes from now
+    const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
     
     console.log('⏰ Checking for auctions starting in 10 minutes...');
     
-    // Find auctions that start in exactly 10 minutes
     const [auctions] = await db.query(`
       SELECT a.id, a.title, a.auction_date, a.start_time, a.open_to_all,
              GROUP_CONCAT(DISTINCT ap.phone_number) as participant_phones,
@@ -112,42 +111,31 @@ async function send10MinuteReminders() {
       try {
         console.log(`🎯 Sending 10-minute reminders for auction: ${auction.title}`);
         
-        // Get all phone numbers to send reminders to
         const phoneNumbers = new Set();
         
         // Add participants
         if (auction.participant_phones) {
           auction.participant_phones.split(',').forEach(phone => {
-            if (phone) phoneNumbers.add(phone);
+            if (phone && phone.trim()) phoneNumbers.add(phone.trim());
           });
         }
         
         // Add bidders (for open auctions)
         if (auction.open_to_all && auction.bidder_phones) {
           auction.bidder_phones.split(',').forEach(phone => {
-            if (phone) phoneNumbers.add(phone);
+            if (phone && phone.trim()) phoneNumbers.add(phone.trim());
           });
         }
         
         const phoneList = Array.from(phoneNumbers);
-        console.log(`📱 Sending reminders to ${phoneList.length} participants for auction ${auction.id}`);
-        
-        // Format auction details for SMS
-        const formattedDate = new Date(auction.auction_date).toLocaleDateString('en-IN', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric'
-        });
-        const formattedTime = formatTimeToAMPM(auction.start_time);
-        const eventDateTime = `${formattedDate} at ${formattedTime}`;
+        console.log(`📱 Sending reminders to ${phoneList.length} participants:`, phoneList);
         
         let smsCount = 0;
         let smsErrors = [];
         
-        // Send reminder SMS to each phone number
         for (const phoneNumber of phoneList) {
           try {
-            console.log(`⏰ Sending 10-minute reminder to: ${phoneNumber}`);
+            console.log(`⏰ Attempting to send 10-minute reminder to: ${phoneNumber}`);
             
             // Get user name
             let userName = 'Participant';
@@ -158,16 +146,12 @@ async function send10MinuteReminders() {
             );
             
             if (userData.length > 0) {
-              if (userData[0].person_name) {
-                userName = userData[0].person_name;
-              } else if (userData[0].company_name) {
-                userName = userData[0].company_name;
-              }
+              userName = userData[0].person_name || userData[0].company_name || 'Participant';
             }
             
-            // Send reminder using AuctionEventReminder template
+            // ✅ FIXED: Send reminder with proper parameters
             await smsService.sendAuctionReminder(
-              phoneNumber,
+              phoneNumber,  // SMS service will handle formatting
               userName,
               `${auction.title} starting in 10 minutes`
             );
@@ -184,12 +168,15 @@ async function send10MinuteReminders() {
           }
           
           // Delay to avoid rate limiting
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 1000));
         }
         
         console.log(`📊 10-minute reminders summary for auction ${auction.id}:`);
         console.log(`✅ Successful: ${smsCount}`);
         console.log(`❌ Failed: ${smsErrors.length}`);
+        if (smsErrors.length > 0) {
+          console.log('❌ Failed numbers:', smsErrors);
+        }
         
       } catch (auctionError) {
         console.error(`❌ Error processing 10-minute reminder for auction ${auction.id}:`, auctionError.message);
