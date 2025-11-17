@@ -4,19 +4,19 @@ const FormData = require('form-data');
 // ✅ USE TRANSACTIONAL API KEY for Transactional Templates
 const TRANSACTIONAL_API_KEY = '64896017-8585-11f0-a562-0200cd936042';
 
-// Template Configuration - EXACT TEMPLATE NAMES FROM YOUR SCREENSHOTS
+// Template Configuration - EXACTLY as approved on DLT
 const TEMPLATES = {
   NEW_AUCTION: {
-    name: 'New Auction Created', // ✅ Exact template name
-    senderId: 'EZEAUC', // ✅ Exact sender ID
-    variables: ['VAR1', 'VAR2', 'VAR3'],
+    name: 'New Auction Created', // ✅ Exact template name from DLT
+    senderId: 'EZEAUC', // ✅ Exact sender ID from DLT
+    variables: ['VAR1', 'VAR2'], // Only 2 variables as per DLT approval
     template: 'Hello #VAR1#, a new auction has been created for you. Details: #VAR2# available on your dashboard. – TPS Enterprises',
     type: 'TRANSACTIONAL'
   },
   AUCTION_REMINDER: {
-    name: 'AuctionEventReminder', // ✅ Exact template name  
-    senderId: 'EAUCIN', // ✅ Exact sender ID
-    variables: ['VAR1', 'VAR2'],
+    name: 'AuctionEventReminder', // ✅ Exact template name from DLT  
+    senderId: 'EAUCIN', // ✅ Exact sender ID from DLT
+    variables: ['VAR1', 'VAR2'], // Only 2 variables as per DLT approval
     template: 'Hello #VAR1#, this is a reminder for your upcoming auction event #VAR2#. – TPS Enterprises',
     type: 'TRANSACTIONAL'
   }
