@@ -87,12 +87,12 @@ let reminderInterval;
 /**
  * Send 10-minute reminder SMS for upcoming auctions
  */
+// Update your send10MinuteReminders function
 async function send10MinuteReminders() {
   try {
     const now = new Date();
     console.log('⏰ Checking for auctions starting in 10 minutes...', now);
     
-    // FIXED: Better query to find auctions starting in exactly 10 minutes
     const [auctions] = await db.query(`
       SELECT 
         a.id, 
@@ -114,9 +114,7 @@ async function send10MinuteReminders() {
     for (const auction of auctions) {
       try {
         console.log(`🎯 Processing auction: ${auction.title} (ID: ${auction.id})`);
-        console.log(`📅 Auction datetime: ${auction.auction_datetime}`);
         
-        // Get ALL participants for this auction (including joined, approved, invited)
         const [participants] = await db.query(`
           SELECT DISTINCT ap.phone_number, u.person_name, u.company_name
           FROM auction_participants ap
@@ -131,31 +129,20 @@ async function send10MinuteReminders() {
         let smsCount = 0;
         let smsErrors = [];
         
-        // Send reminder to each participant
         for (const participant of participants) {
           try {
-            if (!participant.phone_number) {
-              console.log('⚠️ Skipping participant with no phone number');
-              continue;
-            }
+            if (!participant.phone_number) continue;
             
             console.log(`⏰ Sending 10-minute reminder to: ${participant.phone_number}`);
             
             const userName = participant.person_name || participant.company_name || 'Participant';
-            const eventDetails = `${auction.title} starting in 10 minutes`;
+            const message = `Hello ${userName}, reminder: ${auction.title} starting in 10 minutes. Join now! - TPS Enterprises`;
             
-            // Use the same working template SMS function
-            await smsService.sendTemplateSMS(
-              participant.phone_number,
-              {
-                VAR1: userName,
-                VAR2: eventDetails
-              },
-              'AUCTION_REMINDER' // Use the AuctionEventReminder template
-            );
+            // ✅ USE PROMOTIONAL SMS INSTEAD
+            await smsService.sendPromotionalSMS(participant.phone_number, message);
             
             smsCount++;
-            console.log(`✅ 10-minute reminder sent successfully to ${participant.phone_number}`);
+            console.log(`✅ Promotional reminder sent successfully to ${participant.phone_number}`);
             
           } catch (smsError) {
             console.error(`❌ Failed to send to ${participant.phone_number}:`, smsError.message);
@@ -165,17 +152,12 @@ async function send10MinuteReminders() {
             });
           }
           
-          // Delay to avoid rate limiting
           await new Promise(r => setTimeout(r, 1000));
         }
         
         console.log(`📊 Reminder summary for auction ${auction.id}:`);
         console.log(`✅ Successful: ${smsCount}`);
         console.log(`❌ Failed: ${smsErrors.length}`);
-        
-        if (smsErrors.length > 0) {
-          console.log('❌ Failed numbers:', smsErrors);
-        }
         
       } catch (auctionError) {
         console.error(`❌ Error processing auction ${auction.id}:`, auctionError.message);
