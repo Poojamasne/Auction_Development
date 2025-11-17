@@ -90,79 +90,77 @@ let reminderInterval;
 async function send10MinuteReminders() {
   try {
     const now = new Date();
-    const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
+    console.log('⏰ Checking for auctions starting in 10 minutes...', now);
     
-    console.log('⏰ Checking for auctions starting in 10 minutes...');
-    
+    // FIXED: Better query to find auctions starting in exactly 10 minutes
     const [auctions] = await db.query(`
-      SELECT a.id, a.title, a.auction_date, a.start_time, a.open_to_all,
-             GROUP_CONCAT(DISTINCT ap.phone_number) as participant_phones,
-             GROUP_CONCAT(DISTINCT u.phone_number) as bidder_phones
+      SELECT 
+        a.id, 
+        a.title, 
+        a.auction_date, 
+        a.start_time,
+        a.open_to_all,
+        a.status,
+        CONCAT(a.auction_date, ' ', a.start_time) as auction_datetime
       FROM auctions a
-      LEFT JOIN auction_participants ap ON a.id = ap.auction_id AND ap.status IN ('joined', 'approved')
-      LEFT JOIN bids b ON a.id = b.auction_id
-      LEFT JOIN users u ON b.user_id = u.id
       WHERE a.status = 'upcoming'
-        AND CONCAT(a.auction_date, ' ', a.start_time) BETWEEN DATE_SUB(NOW(), INTERVAL 1 MINUTE) AND DATE_ADD(NOW(), INTERVAL 10 MINUTE)
-      GROUP BY a.id
+        AND TIMESTAMP(CONCAT(a.auction_date, ' ', a.start_time)) 
+            BETWEEN DATE_ADD(NOW(), INTERVAL 9 MINUTE) 
+            AND DATE_ADD(NOW(), INTERVAL 11 MINUTE)
     `);
+    
+    console.log(`📊 Found ${auctions.length} auctions starting in ~10 minutes`);
     
     for (const auction of auctions) {
       try {
-        console.log(`🎯 Sending 10-minute reminders for auction: ${auction.title}`);
+        console.log(`🎯 Processing auction: ${auction.title} (ID: ${auction.id})`);
+        console.log(`📅 Auction datetime: ${auction.auction_datetime}`);
         
-        const phoneNumbers = new Set();
+        // Get ALL participants for this auction (including joined, approved, invited)
+        const [participants] = await db.query(`
+          SELECT DISTINCT ap.phone_number, u.person_name, u.company_name
+          FROM auction_participants ap
+          LEFT JOIN users u ON u.phone_number = ap.phone_number
+          WHERE ap.auction_id = ?
+            AND ap.phone_number IS NOT NULL
+            AND ap.phone_number != ''
+        `, [auction.id]);
         
-        // Add participants
-        if (auction.participant_phones) {
-          auction.participant_phones.split(',').forEach(phone => {
-            if (phone && phone.trim()) phoneNumbers.add(phone.trim());
-          });
-        }
-        
-        // Add bidders (for open auctions)
-        if (auction.open_to_all && auction.bidder_phones) {
-          auction.bidder_phones.split(',').forEach(phone => {
-            if (phone && phone.trim()) phoneNumbers.add(phone.trim());
-          });
-        }
-        
-        const phoneList = Array.from(phoneNumbers);
-        console.log(`📱 Sending reminders to ${phoneList.length} participants:`, phoneList);
+        console.log(`📱 Found ${participants.length} participants for auction ${auction.id}`);
         
         let smsCount = 0;
         let smsErrors = [];
         
-        for (const phoneNumber of phoneList) {
+        // Send reminder to each participant
+        for (const participant of participants) {
           try {
-            console.log(`⏰ Attempting to send 10-minute reminder to: ${phoneNumber}`);
-            
-            // Get user name
-            let userName = 'Participant';
-            const cleanPhone = phoneNumber.replace(/\D/g, '');
-            const [userData] = await db.query(
-              'SELECT person_name, company_name FROM users WHERE phone_number = ?',
-              [cleanPhone]
-            );
-            
-            if (userData.length > 0) {
-              userName = userData[0].person_name || userData[0].company_name || 'Participant';
+            if (!participant.phone_number) {
+              console.log('⚠️ Skipping participant with no phone number');
+              continue;
             }
             
-            // ✅ FIXED: Send reminder with proper parameters
-            await smsService.sendAuctionReminder(
-              phoneNumber,  // SMS service will handle formatting
-              userName,
-              `${auction.title} starting in 10 minutes`
+            console.log(`⏰ Sending 10-minute reminder to: ${participant.phone_number}`);
+            
+            const userName = participant.person_name || participant.company_name || 'Participant';
+            const eventDetails = `${auction.title} starting in 10 minutes`;
+            
+            // Use the same working template SMS function
+            await smsService.sendTemplateSMS(
+              participant.phone_number,
+              {
+                VAR1: userName,
+                VAR2: eventDetails
+              },
+              'AUCTION_REMINDER' // Use the AuctionEventReminder template
             );
             
             smsCount++;
-            console.log(`✅ 10-minute reminder sent successfully to ${phoneNumber}`);
+            console.log(`✅ 10-minute reminder sent successfully to ${participant.phone_number}`);
             
           } catch (smsError) {
-            console.error(`❌ 10-minute reminder failed for ${phoneNumber}:`, smsError.message);
+            console.error(`❌ Failed to send to ${participant.phone_number}:`, smsError.message);
             smsErrors.push({
-              phone: phoneNumber,
+              phone: participant.phone_number,
               error: smsError.message
             });
           }
@@ -171,15 +169,16 @@ async function send10MinuteReminders() {
           await new Promise(r => setTimeout(r, 1000));
         }
         
-        console.log(`📊 10-minute reminders summary for auction ${auction.id}:`);
+        console.log(`📊 Reminder summary for auction ${auction.id}:`);
         console.log(`✅ Successful: ${smsCount}`);
         console.log(`❌ Failed: ${smsErrors.length}`);
+        
         if (smsErrors.length > 0) {
           console.log('❌ Failed numbers:', smsErrors);
         }
         
       } catch (auctionError) {
-        console.error(`❌ Error processing 10-minute reminder for auction ${auction.id}:`, auctionError.message);
+        console.error(`❌ Error processing auction ${auction.id}:`, auctionError.message);
       }
     }
     
@@ -187,22 +186,27 @@ async function send10MinuteReminders() {
     console.error('❌ 10-minute reminder check error:', error.message);
   }
 }
-
 /**
  * Start automatic 10-minute reminders
  */
 function start10MinuteReminders() {
-  if (reminderInterval) clearInterval(reminderInterval);
+  // Clear existing interval
+  if (reminderInterval) {
+    clearInterval(reminderInterval);
+    console.log('🔄 Restarting 10-minute reminder service...');
+  }
   
   // Run immediately on startup
+  console.log('🚀 Starting 10-minute reminder service...');
   send10MinuteReminders().catch(console.error);
   
   // Run every minute to catch auctions starting in 10 minutes
   reminderInterval = setInterval(() => {
+    console.log('⏰ Running scheduled 10-minute reminder check...');
     send10MinuteReminders().catch(console.error);
   }, 60000); // Check every minute
   
-  console.log('⏰ 10-minute reminder service started (checking every minute)');
+  console.log('✅ 10-minute reminder service started (checking every minute)');
 }
 
 // ------------------------------------------------------------------
@@ -246,8 +250,10 @@ function startAutomaticStatusUpdates() {
   statusUpdateInterval = setInterval(() => updateAuctionStatuses().catch(console.error), 30000);
   console.log('✅ Auto status updates every 30 s (IST)');
 }
+
+// START BOTH SERVICES
 startAutomaticStatusUpdates();
-start10MinuteReminders(); // ← ADD THIS LINE
+start10MinuteReminders(); // ← ADD THIS LINE TO START THE REMINDER SERVICE
 
 process.on('SIGINT', () => {
   if (statusUpdateInterval) { clearInterval(statusUpdateInterval); console.log('❌ Auto updates stopped'); }
