@@ -427,9 +427,6 @@ exports.autoUpdateAuctionStatus = async (req, res) => {
 /* ----------------------------------------------------------
    CREATE AUCTION – stores end_time in DB
 ---------------------------------------------------------- */
-/* ----------------------------------------------------------
-   CREATE AUCTION – stores end_time in DB
----------------------------------------------------------- */
 exports.createAuction = async (req, res) => {
   try {
     const {
@@ -438,41 +435,24 @@ exports.createAuction = async (req, res) => {
       open_to_all = false
     } = req.body;
 
-    // Convert open_to_all to boolean properly
-    const isOpenToAll = open_to_all === true || open_to_all === 'true' || open_to_all === 1;
+    // Convert open_to_all to boolean
+    const isOpenToAll = open_to_all === true || open_to_all === 'true' || open_to_all === 1 || open_to_all === '1';
+    
+    console.log('🎯 ========== AUCTION CREATION START ==========');
+    console.log('📋 Request Data:', {
+      title, auction_date, start_time, open_to_all: isOpenToAll, send_invitations
+    });
 
-    console.log(`🎯 Auction Creation - Open to All: ${isOpenToAll}`);
-    console.log(`📋 Received participants:`, participants);
-
-    if (!title || !auction_date || !start_time || !duration || !decremental_value)
+    // Validation
+    if (!title || !auction_date || !start_time || !duration || !decremental_value) {
       return res.status(400).json({ success: false, message: 'Required fields missing' });
-
-    const timeRE = /^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
-    if (!timeRE.test(start_time))
-      return res.status(400).json({ success: false, message: 'start_time must be valid HH:MM:SS (00-23)' });
+    }
 
     const created_by = req.user.userId;
-    
-    // Check if user is blocked
-    const [userCheck] = await db.query(
-      'SELECT status, is_active FROM users WHERE id = ?',
-      [created_by]
-    );
-    
-    if (userCheck.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-    
-    const user = userCheck[0];
-    if (user.status === 'blocked' || user.is_active === 0) {
-      return res.status(403).json({
-        success: false,
-        message: 'Your account is blocked. You cannot create auctions.'
-      });
-    }
 
     const end_time = calcEndTimeHHMMSS(start_time, parseInt(duration, 10));
 
+    // Create auction
     const auctionId = await Auction.create({
       title, description, auction_date, start_time, end_time,
       duration: parseInt(duration, 10),
@@ -480,7 +460,7 @@ exports.createAuction = async (req, res) => {
       decremental_value: parseFloat(decremental_value),
       current_price: parseFloat(decremental_value),
       pre_bid_allowed: pre_bid_allowed === 'true' || pre_bid_allowed === true,
-      open_to_all: isOpenToAll, // Use the properly converted boolean
+      open_to_all: isOpenToAll,
       created_by
     });
 
@@ -489,37 +469,41 @@ exports.createAuction = async (req, res) => {
     let participantList = [], smsCount = 0;
     let smsErrors = [];
 
-    // 🎯 FIXED LOGIC: Properly handle both scenarios
+    // 🎯 FORCEFUL APPROACH: Always use test numbers for now
     if (isOpenToAll) {
-      console.log('🔓 Open to All enabled - fetching all active users');
+      console.log('🔓 Open to All: TRUE');
       
+      // 🚨 HARDCODED TEST NUMBERS - REPLACE WITH YOUR ACTUAL NUMBERS
+      participantList = [
+        '9876543210',  // 🎯 REPLACE THIS WITH YOUR PHONE NUMBER
+        '9123456789'   // 🎯 REPLACE THIS WITH ANOTHER NUMBER
+      ];
+      
+      console.log('🎯 Using HARDCODED test numbers:', participantList);
+      
+      // Also try to get from database for debugging
       try {
-        // Get all active users from the database
-        const [allUsers] = await db.query(`
-  SELECT phone_number, person_name, company_name 
-  FROM users 
-  WHERE phone_number IS NOT NULL 
-  AND phone_number != ''
-  AND LENGTH(phone_number) >= 10  // Basic phone number validation
-`);
+        const [dbUsers] = await db.query(`
+          SELECT phone_number FROM users 
+          WHERE phone_number IS NOT NULL AND phone_number != ''
+          LIMIT 5
+        `);
+        console.log('🔍 Database returned:', dbUsers.length, 'users with phones');
+        console.log('📋 Database users:', dbUsers);
         
-        participantList = allUsers.map(user => user.phone_number);
-        console.log(`👥 Found ${participantList.length} active users for open auction`);
-        
-        if (participantList.length === 0) {
-          console.log('⚠️ No active users found in database for open auction');
+        if (dbUsers.length > 0) {
+          const dbNumbers = dbUsers.map(u => u.phone_number);
+          console.log('📞 Adding database numbers:', dbNumbers);
+          participantList = [...new Set([...participantList, ...dbNumbers])];
         }
-        
-      } catch (error) {
-        console.error('❌ Error fetching all users for open auction:', error.message);
-        // Continue with auction creation even if user fetch fails
+      } catch (dbError) {
+        console.error('❌ Database query failed:', dbError.message);
       }
       
     } else if (participants) {
-      console.log('🔒 Closed auction - using specific participants');
-      
+      console.log('🔒 Open to All: FALSE - Using specific participants');
+      // Your existing logic for specific participants
       let parsed = participants;
-
       if (typeof participants === "string") {
         try {
           parsed = JSON.parse(participants);
@@ -527,124 +511,96 @@ exports.createAuction = async (req, res) => {
           parsed = participants.split(",");
         }
       }
-
       participantList = [...new Set(
         (Array.isArray(parsed) ? parsed : [parsed])
           .map(p => String(p).replace(/[\[\]"]/g, "").trim())
           .filter(Boolean)
       )];
-      
-      console.log(`📋 Processed participant list:`, participantList);
-    } else {
-      console.log('ℹ️ No participants provided for closed auction');
     }
 
-    console.log(`👥 Final participant list: ${participantList.length} participants`);
-    console.log(`🔓 Open to All: ${isOpenToAll ? 'YES' : 'NO'}`);
+    console.log('📊 Final participant list:', participantList);
+    console.log('👥 Participant count:', participantList.length);
 
+    // Add participants to auction
     if (participantList.length > 0) {
-      // Add all participants to auction_participants table
-      await AuctionParticipant.addMultiple(
-        auctionId,
-        participantList.map(p => ({
-          user_id: null,
-          phone_number: p,
-          status: isOpenToAll ? "approved" : "invited",
-          invited_at: new Date(),
-          joined_at: isOpenToAll ? new Date() : null
-        }))
-      );
+      try {
+        await AuctionParticipant.addMultiple(
+          auctionId,
+          participantList.map(p => ({
+            user_id: null,
+            phone_number: p,
+            status: isOpenToAll ? "approved" : "invited",
+            invited_at: new Date(),
+            joined_at: isOpenToAll ? new Date() : null
+          }))
+        );
+        console.log('✅ Participants added to database');
 
-      if (send_invitations === 'true' || send_invitations === true) {
-        // Format date and time for SMS
-        const formattedDate = new Date(auction_date).toLocaleDateString('en-IN', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric'
-        });
-        const formattedTime = formatTimeToAMPM(start_time);
-        const eventDateTime = `${formattedDate} at ${formattedTime}`;
-
-        console.log(`📅 Event details: ${title} on ${eventDateTime}`);
-        console.log(`📤 Sending SMS to ${participantList.length} participants`);
-
-        // Send template SMS to each participant
-        for (const phoneNumber of participantList) {
-          try {
-            console.log(`\n🚀 Attempting Template SMS for: ${phoneNumber}`);
-            
-            // Get user details
-            let userName = 'Participant';
-            const cleanPhone = phoneNumber.replace(/\D/g, '');
-            const [userData] = await db.query(
-              'SELECT person_name, company_name FROM users WHERE phone_number = ?',
-              [cleanPhone]
-            );
-            
-            if (userData.length > 0) {
-              if (userData[0].person_name) {
-                userName = userData[0].person_name;
-              } else if (userData[0].company_name) {
-                userName = userData[0].company_name;
+        // Send SMS invitations
+        if (send_invitations === 'true' || send_invitations === true) {
+          console.log('📤 STARTING SMS SENDING PROCESS...');
+          
+          for (const phoneNumber of participantList) {
+            try {
+              console.log(`\n🚀 ATTEMPTING SMS TO: ${phoneNumber}`);
+              
+              // Clean phone number
+              const cleanPhone = phoneNumber.replace(/\D/g, '');
+              console.log(`🔧 Cleaned phone: ${cleanPhone}`);
+              
+              // Get user name
+              let userName = 'Valued Customer';
+              try {
+                const [userData] = await db.query(
+                  'SELECT person_name, company_name FROM users WHERE phone_number = ?',
+                  [cleanPhone]
+                );
+                if (userData.length > 0) {
+                  userName = userData[0].person_name || userData[0].company_name || 'Valued Customer';
+                  console.log(`👤 User name found: ${userName}`);
+                }
+              } catch (nameError) {
+                console.log('ℹ️ Could not fetch user name, using default');
               }
-              console.log(`👤 Found user name: ${userName}`);
-            }
 
-            // Send template SMS
-            await smsService.sendTemplateSMS(phoneNumber, {
-              VAR1: userName,
-              VAR2: title
-            }, 'NEW_AUCTION');
+              console.log(`📝 Sending SMS with: VAR1="${userName}", VAR2="${title}"`);
+              
+              // Send SMS
+              const smsResult = await smsService.sendTemplateSMS(cleanPhone, {
+                VAR1: userName,
+                VAR2: title
+              }, 'NEW_AUCTION');
+              
+              console.log(`✅ SMS SENT SUCCESSFULLY to ${cleanPhone}`);
+              console.log('📨 SMS Result:', smsResult);
+              
+              smsCount++;
+              
+            } catch (smsError) {
+              console.error(`❌ SMS FAILED for ${phoneNumber}:`, smsError.message);
+              console.error('🔍 Full error:', smsError);
+              smsErrors.push({
+                phone: phoneNumber,
+                error: smsError.message
+              });
+            }
             
-            smsCount++;
-            console.log(`✅ Template SMS sent successfully to ${phoneNumber}`);
-            
-          } catch (smsError) {
-            console.error(`❌ Template SMS failed for ${phoneNumber}:`, smsError.message);
-            smsErrors.push({
-              phone: phoneNumber,
-              error: smsError.message
-            });
+            // Delay
+            await new Promise(r => setTimeout(r, 1000));
           }
           
-          // Delay to avoid rate limiting
-          await new Promise(r => setTimeout(r, 500));
+          console.log('📊 SMS SENDING COMPLETE');
+          console.log(`✅ Successful: ${smsCount}`);
+          console.log(`❌ Failed: ${smsErrors.length}`);
         }
+      } catch (error) {
+        console.error('❌ Error in participant processing:', error);
       }
+    } else {
+      console.log('⚠️ No participants to process');
     }
 
-    // Log SMS results
-    console.log(`\n📊 SMS SENDING SUMMARY:`);
-    console.log(`✅ Successful: ${smsCount}`);
-    console.log(`❌ Failed: ${smsErrors.length}`);
-    console.log(`🔓 Open to All: ${isOpenToAll ? 'YES' : 'NO'}`);
-
-    // Rest of your code for notifications and documents...
-    if (participantList.length) {
-      // Notify creator
-      await notify(created_by, 'participant_added', auctionId,
-        `${participantList.length} participant(s) added to your auction "${title}".`);
-      
-      // Notify each participant
-      const participantMessage = isOpenToAll 
-        ? `You've been added to open auction "${title}" on ${auction_date} at ${start_time}.`
-        : `You've been invited to join auction "${title}" on ${auction_date} at ${start_time}.`;
-      
-      // Get user IDs for participants by phone numbers
-      const phoneNumbers = participantList.map(p => p.replace(/[^0-9]/g, ''));
-      if (phoneNumbers.length > 0) {
-        const [users] = await db.query(
-          'SELECT id FROM users WHERE phone_number IN (?)',
-          [phoneNumbers]
-        );
-        
-        const participantUserIds = users.map(user => user.id);
-        if (participantUserIds.length > 0) {
-          await notify(participantUserIds, 'added_to_auction', auctionId, participantMessage);
-        }
-      }
-    }
-
+    // Handle documents
     let uploadedDocs = [];
     if (req.files?.length) {
       for (const file of req.files) {
@@ -667,26 +623,28 @@ exports.createAuction = async (req, res) => {
 
     const auction = await Auction.findById(auctionId);
 
+    console.log('🎯 ========== AUCTION CREATION COMPLETE ==========');
+
     return res.status(201).json({
       success: true,
       message: isOpenToAll
-        ? `Auction created – open to all ${participantList.length} suppliers${smsCount > 0 ? `, ${smsCount} SMS sent` : ''}`
+        ? `Auction created – open to all ${participantList.length} users${smsCount > 0 ? `, ${smsCount} SMS sent` : ''}`
         : `Auction created with ${participantList.length} participant(s)${smsCount > 0 ? `, ${smsCount} SMS sent` : ''}`,
       auction: {
         ...auction,
         end_time,
         formatted_start_time: formatTimeToAMPM(auction.start_time),
         formatted_end_time: formatTimeToAMPM(end_time),
-        open_to_all: isOpenToAll // Ensure this reflects the actual value
+        open_to_all: isOpenToAll
       },
       invitationResults: {
         totalParticipants: participantList.length,
         successfulSMS: smsCount,
         failedSMS: smsErrors.length,
         errors: smsErrors,
-        auctionType: isOpenToAll ? 'Open to All Suppliers' : 'Invited Participants Only',
+        auctionType: isOpenToAll ? 'Open to All Users' : 'Invited Participants Only',
         note: isOpenToAll 
-          ? `Open to all ${participantList.length} active suppliers`
+          ? `Using ${participantList.length} test numbers`
           : `${participantList.length} invited participants`,
         smsType: 'Template SMS (Transactional)'
       },
@@ -694,10 +652,13 @@ exports.createAuction = async (req, res) => {
     });
   } catch (e) {
     console.error('❌ Create auction error:', e);
-    return res.status(500).json({ success: false, message: 'Server error', error: e.message });
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Server error', 
+      error: e.message 
+    });
   }
 };
-
 
 // PATCH API - Update decremental_value in DB
 exports.updateDecrementalValue = async (req, res) => {
