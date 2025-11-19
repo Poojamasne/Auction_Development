@@ -469,40 +469,39 @@ exports.createAuction = async (req, res) => {
     let participantList = [], smsCount = 0;
     let smsErrors = [];
 
-    // 🎯 FORCEFUL APPROACH: Always use test numbers for now
+    // 🎯 FIXED: Get ALL users when open_to_all=true
     if (isOpenToAll) {
-      console.log('🔓 Open to All: TRUE');
+      console.log('🔓 Open to All: TRUE - Fetching ALL users from database');
       
-      // 🚨 HARDCODED TEST NUMBERS - REPLACE WITH YOUR ACTUAL NUMBERS
-      participantList = [
-        '9876543210',  // 🎯 REPLACE THIS WITH YOUR PHONE NUMBER
-        '9123456789'   // 🎯 REPLACE THIS WITH ANOTHER NUMBER
-      ];
-      
-      console.log('🎯 Using HARDCODED test numbers:', participantList);
-      
-      // Also try to get from database for debugging
       try {
-        const [dbUsers] = await db.query(`
-          SELECT phone_number FROM users 
-          WHERE phone_number IS NOT NULL AND phone_number != ''
-          LIMIT 5
+        // Get ALL users with phone numbers
+        const [allUsers] = await db.query(`
+          SELECT phone_number, person_name, company_name 
+          FROM users 
+          WHERE phone_number IS NOT NULL 
+          AND phone_number != ''
+          AND LENGTH(phone_number) >= 10
         `);
-        console.log('🔍 Database returned:', dbUsers.length, 'users with phones');
-        console.log('📋 Database users:', dbUsers);
         
-        if (dbUsers.length > 0) {
-          const dbNumbers = dbUsers.map(u => u.phone_number);
-          console.log('📞 Adding database numbers:', dbNumbers);
-          participantList = [...new Set([...participantList, ...dbNumbers])];
+        participantList = allUsers.map(user => user.phone_number);
+        console.log(`👥 Found ${participantList.length} users from database`);
+        
+        // Show sample users for debugging
+        if (allUsers.length > 0) {
+          console.log('📋 Sample users from database:');
+          allUsers.slice(0, 5).forEach((user, index) => {
+            console.log(`   ${index + 1}. ${user.phone_number} - ${user.person_name || user.company_name || 'No Name'}`);
+          });
         }
-      } catch (dbError) {
-        console.error('❌ Database query failed:', dbError.message);
+        
+      } catch (error) {
+        console.error('❌ Error fetching users:', error.message);
       }
       
     } else if (participants) {
       console.log('🔒 Open to All: FALSE - Using specific participants');
-      // Your existing logic for specific participants
+      
+      // Handle specific participants
       let parsed = participants;
       if (typeof participants === "string") {
         try {
@@ -511,15 +510,18 @@ exports.createAuction = async (req, res) => {
           parsed = participants.split(",");
         }
       }
+
       participantList = [...new Set(
         (Array.isArray(parsed) ? parsed : [parsed])
           .map(p => String(p).replace(/[\[\]"]/g, "").trim())
           .filter(Boolean)
       )];
+      
+      console.log(`📋 Processed ${participantList.length} specific participants:`, participantList);
     }
 
     console.log('📊 Final participant list:', participantList);
-    console.log('👥 Participant count:', participantList.length);
+    console.log('👥 Total participants to process:', participantList.length);
 
     // Add participants to auction
     if (participantList.length > 0) {
@@ -539,6 +541,7 @@ exports.createAuction = async (req, res) => {
         // Send SMS invitations
         if (send_invitations === 'true' || send_invitations === true) {
           console.log('📤 STARTING SMS SENDING PROCESS...');
+          console.log(`🎯 Sending to ${participantList.length} participants`);
           
           for (const phoneNumber of participantList) {
             try {
@@ -585,7 +588,7 @@ exports.createAuction = async (req, res) => {
               });
             }
             
-            // Delay
+            // Delay to avoid rate limiting
             await new Promise(r => setTimeout(r, 1000));
           }
           
@@ -644,7 +647,7 @@ exports.createAuction = async (req, res) => {
         errors: smsErrors,
         auctionType: isOpenToAll ? 'Open to All Users' : 'Invited Participants Only',
         note: isOpenToAll 
-          ? `Using ${participantList.length} test numbers`
+          ? `Open to all ${participantList.length} users in database`
           : `${participantList.length} invited participants`,
         smsType: 'Template SMS (Transactional)'
       },
