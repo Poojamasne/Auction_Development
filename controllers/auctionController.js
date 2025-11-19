@@ -496,12 +496,12 @@ exports.createAuction = async (req, res) => {
       try {
         // Get all active users from the database
         const [allUsers] = await db.query(`
-          SELECT phone_number, person_name, company_name 
-          FROM users 
-          WHERE is_active = 1 AND status = 'active'
-          AND phone_number IS NOT NULL 
-          AND phone_number != ''
-        `);
+  SELECT phone_number, person_name, company_name 
+  FROM users 
+  WHERE phone_number IS NOT NULL 
+  AND phone_number != ''
+  AND LENGTH(phone_number) >= 10  // Basic phone number validation
+`);
         
         participantList = allUsers.map(user => user.phone_number);
         console.log(`👥 Found ${participantList.length} active users for open auction`);
